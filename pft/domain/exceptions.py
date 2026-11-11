@@ -19,3 +19,19 @@ class InvalidCurrencyError(FinanceError):
 
 class CurrencyMismatchError(FinanceError):
     """Two money values in different currencies were combined or compared."""
+
+
+class TransactionNotFoundError(FinanceError):
+    """No transaction with the requested ID exists in the account."""
+
+
+class DuplicateTransactionError(FinanceError):
+    """A transaction with the same ID is already in the account."""
+
+
+class TransactionIdChangedError(FinanceError):
+    """An edit tried to give a transaction a different ID."""
+
+
+class InvalidAccountNameError(FinanceError):
+    """An account name is empty or only whitespace."""

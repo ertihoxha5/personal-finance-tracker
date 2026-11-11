@@ -406,3 +406,191 @@ body {
     padding: 1rem;
   }
 }
+
+/* Accounts */
+
+.accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field input[type='text'],
+.field input[type='date'],
+.field select,
+.rename-form input {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  min-width: 0;
+}
+
+.field input[aria-invalid='true'],
+.rename-form input[aria-invalid='true'] {
+  border: 2px solid #c53030;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.form-grid .field {
+  max-width: none;
+}
+
+.account-form,
+.inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.button-secondary {
+  background: #fff;
+  color: #1f2933;
+  border: 1px solid #9aa5b1;
+}
+
+.button-secondary:hover {
+  background: #eef1f4;
+}
+
+.button-danger {
+  background: #c53030;
+}
+
+.button-danger:hover {
+  background: #9b2c2c;
+}
+
+.button-small {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.link-button {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2b6cb0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.data-table td:last-child {
+  white-space: normal;
+  min-width: 120px;
+}
+
+.rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.notice-slot {
+  min-height: 0;
+}
+
+.notice {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #b7e4c7;
+  border-radius: 6px;
+  background: #f0faf3;
+  color: #276749;
+}
+
+.data-table tr[aria-selected='true'] {
+  background: #eef4fb;
+}
+
+.data-table caption {
+  text-align: left;
+}
+
+.inline-form {
+  padding: 0.5rem 0;
+}
+
+.skeleton-block.short {
+  height: 140px;
+}
+
+.confirm-dialog {
+  max-width: 420px;
+  border: 1px solid #e4e7eb;
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.confirm-dialog::backdrop {
+  background: rgba(31, 41, 51, 0.5);
+}
+
+.confirm-dialog h3 {
+  margin: 0 0 0.5rem;
+}
+
+/* Narrow screens: each table row becomes a stacked block with labelled values. */
+@media (max-width: 640px) {
+  .stack-narrow thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .stack-narrow tr {
+    display: block;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #e4e7eb;
+  }
+
+  .stack-narrow th,
+  .stack-narrow td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 0;
+    padding: 0.2rem 0;
+    white-space: normal;
+  }
+
+  .stack-narrow td[data-label]::before {
+    content: attr(data-label);
+    color: #52606d;
+  }
+
+  .stack-narrow td:last-child {
+    min-width: 0;
+  }
+}
