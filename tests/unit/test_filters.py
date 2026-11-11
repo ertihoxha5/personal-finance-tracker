@@ -1,14 +1,28 @@
 """Task #08 predicates tested independently of the upcoming Transaction class."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
+from functools import partial
+from types import GeneratorType
 
 import pytest
 
 from pft.domain.exceptions import CurrencyMismatchError
 from pft.domain.money import Money
-from pft.services.filters import amount_between, between, by_account, by_category, by_kind
+from pft.services.filters import (
+    FilterableTransaction,
+    all_of,
+    amount_between,
+    any_of,
+    apply_filters,
+    between,
+    by_account,
+    by_category,
+    by_kind,
+    month_preset,
+)
 
 
 class StubCategory(Enum):
@@ -100,3 +114,99 @@ def test_transaction_currency_must_match_bounds() -> None:
     predicate = amount_between(Money.of("20.00"), Money.of("30.00"))
     with pytest.raises(CurrencyMismatchError):
         predicate(StubTransaction(amount=Money.of("25.00", "USD")))
+
+
+def test_all_of_requires_every_condition() -> None:
+    predicate = all_of(by_category(StubCategory.FOOD), by_account(1))
+    assert predicate(StubTransaction())
+    assert not predicate(StubTransaction(account_id=2))
+    assert not predicate(StubTransaction(category=StubCategory.RENT))
+
+
+def test_any_of_accepts_either_condition() -> None:
+    predicate = any_of(by_category(StubCategory.RENT), by_account(2))
+    assert predicate(StubTransaction(category=StubCategory.RENT))
+    assert predicate(StubTransaction(account_id=2))
+    assert not predicate(StubTransaction())
+
+
+def test_empty_combinations_follow_all_and_any_semantics() -> None:
+    assert all_of()(StubTransaction())
+    assert not any_of()(StubTransaction())
+
+
+def test_combinations_short_circuit() -> None:
+    def must_not_run(transaction: FilterableTransaction) -> bool:
+        raise AssertionError("short-circuited predicate was evaluated")
+
+    assert not all_of(by_account(2), must_not_run)(StubTransaction())
+    assert any_of(by_account(1), must_not_run)(StubTransaction())
+
+
+def test_food_and_amount_above_twenty() -> None:
+    matching = StubTransaction(amount=Money.of("20.01"))
+    items = [
+        StubTransaction(amount=Money.of("20.00")),
+        matching,
+        StubTransaction(category=StubCategory.RENT, amount=Money.of("30.00")),
+    ]
+    result = apply_filters(
+        items,
+        by_category(StubCategory.FOOD),
+        amount_between(Money.of("20.01"), Money.of("100.00")),
+    )
+    assert list(result) == [matching]
+
+
+def test_no_filters_preserves_order_identity_and_concrete_type() -> None:
+    first, second = StubTransaction(account_id=2), StubTransaction(account_id=1)
+    result: Iterator[StubTransaction] = apply_filters([first, second])
+    assert next(result) is first
+    assert next(result) is second
+    assert list(result) == []
+
+
+def test_result_is_a_lazy_single_pass_generator() -> None:
+    consumed: list[int] = []
+    evaluated: list[int] = []
+
+    def source() -> Iterator[StubTransaction]:
+        for account_id in (1, 2, 3):
+            consumed.append(account_id)
+            yield StubTransaction(account_id=account_id)
+
+    def matches(transaction: FilterableTransaction) -> bool:
+        evaluated.append(transaction.account_id)
+        return transaction.account_id >= 2
+
+    result = apply_filters(source(), matches)
+    assert isinstance(result, GeneratorType)
+    assert consumed == evaluated == []
+    assert next(result).account_id == 2
+    assert consumed == evaluated == [1, 2]
+    assert [transaction.account_id for transaction in result] == [3]
+    assert consumed == evaluated == [1, 2, 3]
+    assert list(result) == []
+
+
+def test_nested_combinations_and_empty_source() -> None:
+    predicate = all_of(by_kind(StubKind.EXPENSE), any_of(by_account(1), by_account(2)))
+    assert predicate(StubTransaction(account_id=2))
+    assert not predicate(StubTransaction(account_id=3))
+    assert list(apply_filters([], predicate)) == []
+
+
+@pytest.mark.parametrize("year, month, last_day", [(2024, 2, 29), (2026, 2, 28), (2026, 12, 31)])
+def test_month_preset_binds_calendar_boundaries(year: int, month: int, last_day: int) -> None:
+    preset = month_preset(year, month)
+    assert isinstance(preset, partial)
+    predicate = preset()
+    assert predicate(StubTransaction(date=date(year, month, 1)))
+    assert predicate(StubTransaction(date=date(year, month, last_day)))
+    outside = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    assert not predicate(StubTransaction(date=outside))
+
+
+def test_invalid_month_preset_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        month_preset(2026, 13)
