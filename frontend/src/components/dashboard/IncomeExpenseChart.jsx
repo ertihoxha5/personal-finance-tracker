@@ -9,7 +9,8 @@ import {
   YAxis,
 } from 'recharts'
 import { EXPENSE_COLOR, INCOME_COLOR } from '../../lib/chartColors.js'
-import { formatEUR, formatMonth, formatShortMonth } from '../../lib/format.js'
+import { formatMonth, formatShortMonth } from '../../lib/format.js'
+import { formatEUR } from '../../lib/money.js'
 
 export default function IncomeExpenseChart({ trend }) {
   // Recharts needs numbers; convert the decimal strings only for rendering.

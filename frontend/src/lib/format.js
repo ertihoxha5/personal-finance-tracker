@@ -1,17 +1,4 @@
-// Display-only formatting. Amounts arrive as decimal strings and are converted with
-// Number() here, at render time; no arithmetic on money happens in React.
-// #06 replaces this with the shared formatter and money input.
-
-const eur = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' })
-const eurSigned = new Intl.NumberFormat('en-IE', {
-  style: 'currency',
-  currency: 'EUR',
-  signDisplay: 'exceptZero',
-})
-
-export function formatEUR(amount, { signed = false } = {}) {
-  return (signed ? eurSigned : eur).format(Number(amount))
-}
+// Display-only formatting for percentages and dates. Money formatting lives in money.js.
 
 export function formatPercent(value) {
   return value === null || value === undefined ? '—' : `${value}%`

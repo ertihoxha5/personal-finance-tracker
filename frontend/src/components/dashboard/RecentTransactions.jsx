@@ -1,4 +1,5 @@
-import { formatDate, formatEUR } from '../../lib/format.js'
+import { formatDate } from '../../lib/format.js'
+import { formatEUR } from '../../lib/money.js'
 
 export default function RecentTransactions({ transactions }) {
   return (

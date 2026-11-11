@@ -1,4 +1,5 @@
-import { formatEUR, formatPercent } from '../../lib/format.js'
+import { formatPercent } from '../../lib/format.js'
+import { formatEUR } from '../../lib/money.js'
 
 export default function SummaryCards({ summary }) {
   return (

@@ -1,6 +1,6 @@
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { EXPENSE_COLOR } from '../../lib/chartColors.js'
-import { formatEUR } from '../../lib/format.js'
+import { formatEUR } from '../../lib/money.js'
 
 const ROW_HEIGHT = 34
 
