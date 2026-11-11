@@ -1,0 +1,71 @@
+.transaction-filters-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transaction-filters-page > p { margin: 0; }
+
+.transaction-filters-page fieldset {
+  margin: 1rem 0;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.transaction-filters-page legend { font-weight: 600; }
+
+.transaction-filters-page .category-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.transaction-filters-page .category-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem;
+}
+
+.transaction-filters-page .filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.transaction-filters-page .field { max-width: none; min-width: 0; }
+
+.transaction-filters-page .field input,
+.transaction-filters-page .field select {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: white;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.transaction-filters-page .field input[aria-invalid='true'] { border: 2px solid #c53030; }
+
+.transaction-filters-page .active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.transaction-filters-page .active-filters li {
+  padding: 0.25rem 0.6rem;
+  background: #eef4fb;
+  border: 1px solid #b8cee5;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.transaction-filters-page .data-table { min-width: 760px; }
