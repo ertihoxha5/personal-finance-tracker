@@ -71,7 +71,245 @@ body {
 
 .content {
   flex: 1;
+  min-width: 0;
   padding: 2rem;
+}
+
+/* Focus and accessibility helpers */
+
+:focus-visible {
+  outline: 3px solid #2b6cb0;
+  outline-offset: 2px;
+}
+
+.sidebar :focus-visible {
+  outline-color: #90cdf4;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Dashboard */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.page-header h2 {
+  margin: 0;
+}
+
+.month-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.month-picker label {
+  font-weight: 600;
+}
+
+.month-picker select {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 10px;
+  padding: 1.25rem;
+  min-width: 0;
+}
+
+.card h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.summary-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.summary-card .summary-label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #52606d;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summary-value {
+  margin: 0.35rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-meta {
+  margin: 0.25rem 0 0;
+  color: #52606d;
+  font-size: 0.9rem;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+.chart {
+  width: 100%;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #e4e7eb;
+  white-space: nowrap;
+}
+
+.data-table thead th {
+  font-size: 0.8rem;
+  color: #52606d;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.data-table tbody th {
+  font-weight: 500;
+}
+
+.data-table.compact {
+  margin-top: 0.75rem;
+}
+
+.data-table.compact th,
+.data-table.compact td {
+  padding: 0.35rem 0.5rem;
+}
+
+.data-table .num {
+  text-align: right;
+}
+
+.amount-expense {
+  color: #9c4221;
+}
+
+.amount-income {
+  color: #276749;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.state-message {
+  text-align: center;
+  padding: 2.5rem 1.25rem;
+}
+
+.state-message p {
+  color: #52606d;
+}
+
+.state-error {
+  border-color: #f5c2c2;
+}
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 6px;
+  background: #2b6cb0;
+  color: #fff;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: #2c5282;
+}
+
+.skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #eef1f4 25%, #f8f9fb 50%, #eef1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-card {
+  height: 96px;
+}
+
+.skeleton-block {
+  height: 280px;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -81,5 +319,23 @@ body {
 
   .sidebar {
     width: 100%;
+    padding: 1rem;
+  }
+
+  .brand {
+    margin-bottom: 0.75rem;
+  }
+
+  .sidebar nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .api-status {
+    margin-top: 0.75rem;
+  }
+
+  .content {
+    padding: 1rem;
   }
 }

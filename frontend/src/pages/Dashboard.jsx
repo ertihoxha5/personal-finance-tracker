@@ -1,8 +1,42 @@
+import { useState } from 'react'
+import { DEFAULT_MONTH } from '../api/dashboard.js'
+import { useDashboard } from '../hooks/useDashboard.js'
+import MonthPicker from '../components/dashboard/MonthPicker.jsx'
+import SummaryCards from '../components/dashboard/SummaryCards.jsx'
+import IncomeExpenseChart from '../components/dashboard/IncomeExpenseChart.jsx'
+import CategoryBreakdown from '../components/dashboard/CategoryBreakdown.jsx'
+import RecentTransactions from '../components/dashboard/RecentTransactions.jsx'
+import {
+  DashboardEmpty,
+  DashboardError,
+  DashboardLoading,
+} from '../components/dashboard/DashboardStates.jsx'
+
 export default function Dashboard() {
+  const [month, setMonth] = useState(DEFAULT_MONTH)
+  const { status, data, error, retry } = useDashboard(month)
+  const months = data?.availableMonths ?? [month]
+
   return (
-    <section>
-      <h2>Dashboard</h2>
-      <p>Coming soon.</p>
+    <section className="dashboard" aria-labelledby="dashboard-title">
+      <header className="page-header">
+        <h2 id="dashboard-title">Dashboard</h2>
+        <MonthPicker months={months} value={month} onChange={setMonth} disabled={!data} />
+      </header>
+
+      {status === 'loading' && <DashboardLoading />}
+      {status === 'error' && <DashboardError message={error.message} onRetry={retry} />}
+      {status === 'empty' && <DashboardEmpty month={month} />}
+      {status === 'success' && (
+        <>
+          <SummaryCards summary={data.summary} />
+          <div className="dashboard-grid">
+            <IncomeExpenseChart trend={data.trend} />
+            <CategoryBreakdown categories={data.categories} />
+          </div>
+          <RecentTransactions transactions={data.recentTransactions} />
+        </>
+      )}
     </section>
   )
 }
