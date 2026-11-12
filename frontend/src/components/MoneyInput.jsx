@@ -4,7 +4,8 @@ import { parseMoneyInput } from '../lib/money.js'
 // Text input for EUR amounts. A text field with inputMode="decimal" (not
 // type="number") so "12,50" is accepted and browsers don't alter the value.
 // onChange receives the normalised string ("12.50") or null while the text is
-// empty or invalid. Errors appear after the field loses focus.
+// empty or invalid. Errors appear after the field loses focus. `error` is a message
+// from the server (mapApiError's fieldErrors) and shows at once, over local errors.
 export default function MoneyInput({
   label,
   defaultValue = '',
@@ -12,6 +13,7 @@ export default function MoneyInput({
   required = false,
   hint,
   id,
+  error: serverError = null,
 }) {
   const generatedId = useId()
   const inputId = id ?? generatedId
@@ -22,8 +24,9 @@ export default function MoneyInput({
   const [touched, setTouched] = useState(false)
 
   const parsed = parseMoneyInput(text)
-  const error = parsed.error ?? (required && parsed.value === null ? 'Enter an amount.' : null)
-  const showError = touched && error !== null
+  const localError = parsed.error ?? (required && parsed.value === null ? 'Enter an amount.' : null)
+  const error = serverError ?? (touched ? localError : null)
+  const showError = error !== null
 
   function handleChange(event) {
     const next = event.target.value
