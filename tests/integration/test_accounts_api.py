@@ -167,7 +167,7 @@ def test_transfer_cannot_be_edited_alone(tmp_path: Path) -> None:
 
 
 def notes(client: TestClient, **params: object) -> list[str]:
-    response = client.get("/api/transactions", params=params)  # type: ignore[arg-type]
+    response = client.get("/api/transactions", params=params)
     assert response.status_code == 200, response.text
     return [t["note"] for t in response.json()]
 
@@ -212,7 +212,7 @@ def test_search_sorts_by_amount_and_category(db_path: Path) -> None:
 def test_search_rejects_bad_filters_with_the_error_shape(
     db_path: Path, params: dict[str, object], code: str, field: str
 ) -> None:
-    response = make_client(db_path).get("/api/transactions", params=params)  # type: ignore[arg-type]
+    response = make_client(db_path).get("/api/transactions", params=params)
     assert response.status_code == 422
     assert response.json()["code"] == code
     assert response.json()["field"] == field

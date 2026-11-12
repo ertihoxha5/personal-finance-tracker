@@ -1,6 +1,7 @@
 """Repository tests (#18): the same behaviour for CSV, JSON and SQLite, plus crash safety."""
 
 import datetime as dt
+import os
 import sqlite3
 from collections.abc import Callable
 from decimal import Decimal
@@ -11,8 +12,8 @@ import pytest
 from pft.domain.category import AccountType, Category, Direction
 from pft.domain.exceptions import DataImportError, StorageError
 from pft.domain.money import Money
-from pft.domain.transaction import Expense, Income, Transfer
-from pft.infrastructure import db, repository
+from pft.domain.transaction import Expense, Income, Transaction, Transfer
+from pft.infrastructure import db
 from pft.infrastructure.repository import (
     CsvRepository,
     JsonRepository,
@@ -196,7 +197,7 @@ def test_crash_during_replace_leaves_old_file_unchanged(
     def broken_replace(src: object, dst: object) -> None:
         raise OSError("disk vanished")
 
-    monkeypatch.setattr(repository.os, "replace", broken_replace)
+    monkeypatch.setattr(os, "replace", broken_replace)
     with pytest.raises(OSError), atomic_write(target) as f:
         f.write("new")
     assert target.read_text() == "old"
@@ -214,7 +215,7 @@ def test_failed_save_keeps_the_previously_saved_data(
     def broken_replace(src: object, dst: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(repository.os, "replace", broken_replace)
+    monkeypatch.setattr(os, "replace", broken_replace)
     changed = sample_ledger()
     changed.close_account(2)
     with pytest.raises(StorageError):
@@ -313,7 +314,10 @@ def test_sqlite_upgrades_a_task_5_database_without_losing_rows(tmp_path: Path) -
     ledger = SqliteRepository(path).load()
 
     assert ledger.net_worth == Money.of("3635.50")  # 1500 + 2200 - 64.50
-    assert [t.note for t in ledger.account(1)] == ["Salary", "Groceries"]
+    assert [t.note for t in ledger.account(1) if isinstance(t, Transaction)] == [
+        "Salary",
+        "Groceries",
+    ]
 
 
 def test_sqlite_load_does_not_create_a_database(tmp_path: Path) -> None:
