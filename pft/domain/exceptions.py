@@ -102,6 +102,12 @@ class TransactionIdChangedError(FinanceError):
     code = "transaction_id_changed"
 
 
+class InvalidTransferError(FinanceError):
+    """A transfer was used in a way it doesn't support, such as copying it for recurrence."""
+
+    code = "invalid_transfer"
+
+
 class BudgetError(FinanceError):
     """A budget is invalid, such as a non-positive limit or a duplicate month."""
 

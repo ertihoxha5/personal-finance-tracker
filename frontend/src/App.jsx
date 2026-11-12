@@ -7,6 +7,7 @@ import Accounts from './pages/Accounts.jsx'
 import DevMoney from './pages/DevMoney.jsx'
 import DevErrors from './pages/DevErrors.jsx'
 import DevValidation from './pages/DevValidation.jsx'
+import DevTransactions from './pages/DevTransactions.jsx'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         {import.meta.env.DEV && <Route path="dev/money" element={<DevMoney />} />}
         {import.meta.env.DEV && <Route path="dev/errors" element={<DevErrors />} />}
         {import.meta.env.DEV && <Route path="dev/validation" element={<DevValidation />} />}
+        {import.meta.env.DEV && <Route path="dev/transactions" element={<DevTransactions />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

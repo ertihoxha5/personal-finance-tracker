@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from pft.domain.category import AccountType, Category, Frequency, Kind
+from pft.domain.category import AccountType, Category, Direction, Frequency, Kind
 from pft.domain.exceptions import FinanceError, InvalidCategoryError, InvalidChoiceError
 
 # --- Done-when checks (#10) -------------------------------------------------
@@ -72,6 +72,13 @@ def test_unknown_account_type_targets_the_type_field() -> None:
     assert caught.value.field == "type"
 
 
+def test_direction_from_text() -> None:
+    assert Direction.from_text(" OUT ") is Direction.OUT
+    with pytest.raises(InvalidChoiceError) as caught:
+        Direction.from_text("sideways")
+    assert caught.value.field == "direction"
+
+
 # --- Values -----------------------------------------------------------------
 
 
@@ -79,7 +86,7 @@ def test_enum_sizes_match_the_plan() -> None:
     assert (len(Category), len(Kind), len(AccountType), len(Frequency)) == (9, 3, 4, 3)
 
 
-@pytest.mark.parametrize("member", [*Category, *Kind, *AccountType, *Frequency])
+@pytest.mark.parametrize("member", [*Category, *Kind, *Direction, *AccountType, *Frequency])
 def test_values_are_lowercase_names_and_round_trip_through_str(member: Category) -> None:
     assert member.value == member.name.lower()
     assert str(member) == member.value

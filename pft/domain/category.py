@@ -67,6 +67,18 @@ class Kind(StrEnum):
         return _parse(cls, text, label="kind", field="kind")
 
 
+class Direction(StrEnum):
+    """Which side of a transfer a transaction is: money leaving or entering an account."""
+
+    OUT = "out"
+    IN = "in"
+
+    @classmethod
+    def from_text(cls, text: str) -> Direction:
+        """Parse a transfer direction such as 'OUT'; raises InvalidChoiceError."""
+        return _parse(cls, text, label="direction", field="direction")
+
+
 class AccountType(StrEnum):
     CASH = "cash"
     BANK = "bank"

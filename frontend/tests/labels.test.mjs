@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   ACCOUNT_TYPE_LABELS,
   CATEGORY_LABELS,
+  DIRECTION_LABELS,
   FREQUENCY_LABELS,
   KIND_LABELS,
   accountTypeLabel,
@@ -23,6 +24,7 @@ function pythonEnumValues(name) {
 for (const [name, labels] of [
   ['Category', CATEGORY_LABELS],
   ['Kind', KIND_LABELS],
+  ['Direction', DIRECTION_LABELS],
   ['AccountType', ACCOUNT_TYPE_LABELS],
   ['Frequency', FREQUENCY_LABELS],
 ]) {

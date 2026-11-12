@@ -305,6 +305,49 @@ body {
   color: #276749;
 }
 
+/* #14: kind is named in text with a sign; colour is only an extra cue. */
+.kind-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.kind-sign {
+  font-weight: 700;
+}
+
+.kind-income {
+  color: #276749;
+}
+
+.kind-expense {
+  color: #9c4221;
+}
+
+.kind-transfer,
+.amount-transfer {
+  color: #2c5282;
+}
+
+.kind-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+
+.kind-choice legend {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
 .table-scroll {
   overflow-x: auto;
 }

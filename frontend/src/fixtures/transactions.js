@@ -21,3 +21,13 @@ export const FILTER_TRANSACTIONS = [
   { id: 209, account_id: 1, date: '2026-10-31', category: 'Food', kind: 'expense', amount: '20.00', note: 'Groceries before November' },
   { id: 210, account_id: 1, date: '2026-12-01', category: 'Food', kind: 'expense', amount: '20.01', note: 'December groceries' },
 ]
+
+// #14 demo rows in the pft.domain.transaction shape: enum values as the API sends
+// them, unsigned amounts, and a transfer stored as an OUT/IN pair sharing transfer_id.
+export const DEMO_TRANSACTIONS = [
+  { id: 301, account_id: 1, kind: 'income', amount: '2200.00', date: '2026-11-01', category: 'salary', note: 'Monthly salary' },
+  { id: 302, account_id: 1, kind: 'expense', amount: '64.50', date: '2026-11-02', category: 'food', note: 'Weekly groceries' },
+  { id: 303, account_id: 1, kind: 'transfer', direction: 'out', transfer_id: 'tr-1', amount: '300.00', date: '2026-11-05', category: 'other', note: 'Move to savings' },
+  { id: 304, account_id: 2, kind: 'transfer', direction: 'in', transfer_id: 'tr-1', amount: '300.00', date: '2026-11-05', category: 'other', note: 'Move to savings' },
+  { id: 305, account_id: 3, kind: 'expense', amount: '12.50', date: '2026-11-10', category: 'fun', note: '' },
+]

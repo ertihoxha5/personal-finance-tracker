@@ -20,6 +20,11 @@ export const KIND_LABELS = Object.freeze({
   transfer: 'Transfer',
 })
 
+export const DIRECTION_LABELS = Object.freeze({
+  out: 'Out',
+  in: 'In',
+})
+
 export const ACCOUNT_TYPE_LABELS = Object.freeze({
   cash: 'Cash',
   bank: 'Bank',
@@ -46,6 +51,7 @@ const lookup = (labels) => (value) =>
 
 export const categoryLabel = lookup(CATEGORY_LABELS)
 export const kindLabel = lookup(KIND_LABELS)
+export const directionLabel = lookup(DIRECTION_LABELS)
 export const accountTypeLabel = lookup(ACCOUNT_TYPE_LABELS)
 export const frequencyLabel = lookup(FREQUENCY_LABELS)
 
