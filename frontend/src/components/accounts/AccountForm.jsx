@@ -56,8 +56,9 @@ export default function AccountForm({ onSubmit, onCancel, busy }) {
         <div>
           <MoneyInput
             label="Opening balance"
-            hint="Use 0 for a new account."
+            hint="Use 0 for a new account, or a negative amount such as -250.00 for an existing debt."
             required
+            allowNegative
             onChange={setOpeningBalance}
           />
           {fieldError('openingBalance') && <p className="field-error">{fieldError('openingBalance')}</p>}

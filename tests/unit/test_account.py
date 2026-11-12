@@ -38,6 +38,13 @@ def test_new_account_balance_equals_opening_balance() -> None:
     assert make_account("50.00").balance == Money.of("50.00")
 
 
+def test_negative_opening_balance_for_existing_debt() -> None:
+    account = make_account("-250.00")
+    assert account.balance == Money.of("-250.00")
+    account.add(StubTransaction(1, Money.of("100.00")))  # a repayment
+    assert account.balance == Money.of("-150.00")
+
+
 def test_expense_reduces_balance() -> None:
     account = make_account("50.00")
     account.add(expense(1, "12.50"))

@@ -11,6 +11,7 @@ export default function MoneyInput({
   defaultValue = '',
   onChange,
   required = false,
+  allowNegative = false,
   hint,
   id,
   error: serverError = null,
@@ -23,7 +24,7 @@ export default function MoneyInput({
   const [text, setText] = useState(defaultValue)
   const [touched, setTouched] = useState(false)
 
-  const parsed = parseMoneyInput(text)
+  const parsed = parseMoneyInput(text, { allowNegative })
   const localError = parsed.error ?? (required && parsed.value === null ? 'Enter an amount.' : null)
   const error = serverError ?? (touched ? localError : null)
   const showError = error !== null
@@ -31,7 +32,7 @@ export default function MoneyInput({
   function handleChange(event) {
     const next = event.target.value
     setText(next)
-    onChange?.(parseMoneyInput(next).value)
+    onChange?.(parseMoneyInput(next, { allowNegative }).value)
   }
 
   function handleBlur() {
@@ -51,7 +52,7 @@ export default function MoneyInput({
         <input
           id={inputId}
           type="text"
-          inputMode="decimal"
+          inputMode={allowNegative ? 'text' : 'decimal'}
           autoComplete="off"
           value={text}
           onChange={handleChange}

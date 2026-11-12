@@ -169,6 +169,7 @@ export default function Accounts() {
 
       {selected && (
         <TransactionsPanel
+          key={selected.id}
           account={selected}
           status={transactions.status}
           transactions={transactions.data}

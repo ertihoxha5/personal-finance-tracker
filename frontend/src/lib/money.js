@@ -23,22 +23,26 @@ export function formatEUR(amount, { signed = false } = {}) {
   return (signed ? signedFormat : plain).format(nonNegativeZero).replace('-', MINUS)
 }
 
-const INPUT_PATTERN = /^(\d*)(?:[.,](\d*))?$/
+const INPUT_PATTERN = /^(-)?(\d*)(?:[.,](\d*))?$/
 
 // Parse what a user typed into a normalised decimal string.
 // Accepts "12", "12.5", "12,50", ".5" and "12."; rejects signs, letters,
-// thousands separators and more than two decimals.
+// thousands separators and more than two decimals. A leading "-" is accepted only with
+// { allowNegative: true }, for opening balances of existing debts.
 // Returns { value: "12.50" | null, error: string | null }.
-export function parseMoneyInput(text) {
+export function parseMoneyInput(text, { allowNegative = false } = {}) {
   const trimmed = text.trim()
   if (trimmed === '') return { value: null, error: null }
 
   const match = INPUT_PATTERN.exec(trimmed)
-  if (!match || (match[1] === '' && (match[2] ?? '') === '')) {
-    return { value: null, error: 'Enter an amount like 12.50.' }
+  if (!match || (match[2] === '' && (match[3] ?? '') === '') || (match[1] && !allowNegative)) {
+    return {
+      value: null,
+      error: allowNegative ? 'Enter an amount like 12.50 or -250.00.' : 'Enter an amount like 12.50.',
+    }
   }
 
-  const [, integerDigits, fractionDigits = ''] = match
+  const [, sign = '', integerDigits, fractionDigits = ''] = match
   if (fractionDigits.length > 2) {
     return { value: null, error: 'Use at most 2 decimal places.' }
   }
@@ -48,5 +52,7 @@ export function parseMoneyInput(text) {
     return { value: null, error: 'That amount is too large.' }
   }
 
-  return { value: `${integerPart}.${fractionDigits.padEnd(2, '0')}`, error: null }
+  const digits = `${integerPart}.${fractionDigits.padEnd(2, '0')}`
+  // "-0" and "-0.00" are just zero; never emit a negative zero.
+  return { value: sign && Number(digits) !== 0 ? `-${digits}` : digits, error: null }
 }
