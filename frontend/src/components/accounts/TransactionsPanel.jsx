@@ -79,7 +79,7 @@ function EditRow({ tx, onSave, onCancel }) {
             </div>
           </div>
           {isTransfer && (
-            <p className="field-hint">Saving updates both accounts in this transfer together.</p>
+            <p className="field-hint">Transfers cannot be edited yet: both sides must change together, which is not available.</p>
           )}
           {error && !error.field && (
             <p className="field-error" role="alert">

@@ -1,216 +1,123 @@
-import { ACCOUNT_SEED, ACCOUNT_TYPES } from '../fixtures/accounts.js'
-
-// Stage B data source, like api/dashboard.js: an in-memory stand-in for the accounts API
-// so the screen can be built before #11/#18 expose real endpoints. It keeps the same
-// contract the real API should follow:
-//   - IDs are stable integers assigned by the server and never reused or changed;
-//   - amounts are decimal strings, and balances are calculated here, not in React;
-//   - failures reject with an ApiError carrying a message and, when it belongs to one
-//     input, the name of that field.
-// When the real endpoints exist, replace the bodies with fetch() and keep the signatures.
-//
-// DEFERRED (task #11 review, 12 Nov 2026): balances and net worth here still come from
-// browser-memory fixtures, not FastAPI. The Ledger exists (pft/services/ledger.py) but
-// nothing loads it from SQLite or saves it yet, and the API has no accounts routes.
-// Blocked by #18 (Repository and atomic save) and #14 (Transaction hierarchy); wire
-// GET /api/accounts, GET /api/net-worth and the mutations once those land (#36 integration).
-//
-// Preview other states by adding to the page URL:
-//   ?state=loading | empty | error      (list loading)
-//   ?state=mutation-error               (every create/rename/edit/delete fails)
-
-const DELAY_MS = 250
-const MAX_NAME_LENGTH = 60
+// Accounts API client (#18): talks to FastAPI (pft/api/accounts.py), which keeps the data in
+// SQLite. Components keep the same function names and shapes as before:
+//   - IDs are integers assigned by the server;
+//   - amounts are decimal strings, and balances and net worth are calculated by the server;
+//   - a failure rejects with an ApiError carrying the message, the input field it belongs to
+//     (or null), and the HTTP status.
+// The API sends domain transactions (note, category, unsigned amount, kind/direction). The
+// Accounts screen works with a description and a signed amount, so toTransaction() does that
+// one translation here, as a string operation (never through Number()).
 
 export class ApiError extends Error {
-  constructor(message, { field = null, status = 400 } = {}) {
+  constructor(message, { field = null, status = 400, code = null } = {}) {
     super(message)
     this.name = 'ApiError'
     this.field = field
     this.status = status
+    this.code = code
   }
 }
 
-let db = structuredClone(ACCOUNT_SEED)
-let nextAccountId = 5
+// Server field names -> the names the Accounts forms use.
+const FIELD_NAMES = { opening_balance: 'openingBalance', account_id: 'accountId' }
 
-const previewState = () => new URLSearchParams(window.location.search).get('state')
-
-function respond(compute) {
-  const state = previewState()
-  if (state === 'loading') return new Promise(() => {})
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      try {
-        resolve(structuredClone(compute()))
-      } catch (error) {
-        reject(error)
-      }
-    }, DELAY_MS)
-  })
-}
-
-function respondToMutation(compute) {
-  return respond(() => {
-    if (previewState() === 'mutation-error') {
-      throw new ApiError('The server could not save that change. Nothing was changed.', { status: 500 })
-    }
-    return compute()
-  })
-}
-
-// Integer cents keep the stand-in exact, as the Python Money type does.
-const toCents = (text) => {
-  const negative = text.startsWith('-')
-  const [whole, fraction = ''] = text.replace('-', '').split('.')
-  const cents = Number(whole) * 100 + Number(`${fraction}00`.slice(0, 2))
-  return negative ? -cents : cents
-}
-
-const fromCents = (cents) => {
-  const abs = Math.abs(cents)
-  return `${cents < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
-}
-
-function withBalance(account) {
-  const total = db.transactions
-    .filter((t) => t.accountId === account.id)
-    .reduce((sum, t) => sum + toCents(t.amount), toCents(account.openingBalance))
-  return {
-    ...account,
-    balance: fromCents(total),
-    transactionCount: db.transactions.filter((t) => t.accountId === account.id).length,
-  }
-}
-
-function requireAccount(id) {
-  const account = db.accounts.find((a) => a.id === id)
-  if (!account) throw new ApiError('That account no longer exists. Refresh the list.', { status: 404 })
-  return account
-}
-
-function requireTransaction(accountId, txId) {
-  const tx = db.transactions.find((t) => t.id === txId && t.accountId === accountId)
-  if (!tx) throw new ApiError('That transaction no longer exists. Refresh the list.', { status: 404 })
-  return tx
-}
-
-function validateName(raw, ignoreId = null) {
-  const name = raw.trim()
-  if (!name) throw new ApiError('Enter a name for the account.', { field: 'name' })
-  if (name.length > MAX_NAME_LENGTH) {
-    throw new ApiError(`Use ${MAX_NAME_LENGTH} characters or fewer.`, { field: 'name' })
-  }
-  const taken = db.accounts.some((a) => a.id !== ignoreId && a.name.toLowerCase() === name.toLowerCase())
-  if (taken) throw new ApiError('You already have an account with that name.', { field: 'name' })
-  return name
-}
-
-export function listAccounts() {
-  return respond(() => {
-    const state = previewState()
-    if (state === 'error') throw new ApiError('The accounts could not be loaded.', { status: 500 })
-    if (state === 'empty') return []
-    return db.accounts.map(withBalance)
-  })
-}
-
-// Stand-in for the net-worth total: the sum of all account balances, computed here in
-// integer cents (as the Ledger's net_worth property does), never in React.
-export function getNetWorth() {
-  return respond(() => {
-    if (previewState() === 'error') throw new ApiError('Net worth could not be loaded.', { status: 500 })
-    const balances = previewState() === 'empty' ? [] : db.accounts.map((a) => toCents(withBalance(a).balance))
-    return {
-      currency: 'EUR',
-      netWorth: fromCents(balances.reduce((sum, cents) => sum + cents, 0)),
-      accountCount: balances.length,
-    }
-  })
-}
-
-export function createAccount({ name, type, openingBalance }) {
-  return respondToMutation(() => {
-    const cleanName = validateName(name)
-    if (!ACCOUNT_TYPES.some((t) => t.value === type)) {
-      throw new ApiError('Choose an account type.', { field: 'type' })
-    }
-    if (openingBalance === null || openingBalance === undefined) {
-      throw new ApiError('Enter an opening balance. Use 0 for a new account.', { field: 'openingBalance' })
-    }
-    const account = { id: nextAccountId++, name: cleanName, type, openingBalance }
-    db.accounts.push(account)
-    return withBalance(account)
-  })
-}
-
-export function renameAccount(id, name) {
-  return respondToMutation(() => {
-    const account = requireAccount(id)
-    account.name = validateName(name, id)
-    return withBalance(account)
-  })
-}
-
-export function deleteAccount(id) {
-  return respondToMutation(() => {
-    requireAccount(id)
-    // Transfers keep a counterpart leg in another account, so the whole transfer goes.
-    const doomed = new Set(db.transactions.filter((t) => t.accountId === id).map((t) => t.id))
-    db.transactions.forEach((t) => {
-      if (doomed.has(t.id) && t.counterpartId) doomed.add(t.counterpartId)
+async function request(path, { method = 'GET', body } = {}) {
+  let response
+  try {
+    response = await fetch(`/api${path}`, {
+      method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
-    db.transactions = db.transactions.filter((t) => !doomed.has(t.id))
-    db.accounts = db.accounts.filter((a) => a.id !== id)
-    return { id }
-  })
-}
+  } catch {
+    throw new ApiError('The server could not be reached. Check that the API is running.', { status: 0 })
+  }
 
-export function listTransactions(accountId) {
-  return respond(() => {
-    requireAccount(accountId)
-    return db.transactions
-      .filter((t) => t.accountId === accountId)
-      .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
-  })
-}
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    // A non-JSON body (a proxy error page) is reported with the generic message below.
+  }
 
-// Edit by stable ID. `amount` is a positive decimal string; the sign comes from the kind,
-// except transfers, which keep their direction. A transfer updates both legs together or
-// not at all, so the two balances can never disagree (FR-04).
-export function updateTransaction(accountId, txId, { date, description, kind, amount }) {
-  return respondToMutation(() => {
-    const tx = requireTransaction(accountId, txId)
-    const cleanDescription = description.trim()
-    if (!cleanDescription) throw new ApiError('Enter a description.', { field: 'description' })
-    if (!date) throw new ApiError('Choose a date.', { field: 'date' })
-    if (amount === null || amount === undefined || toCents(amount) === 0) {
-      throw new ApiError('Enter an amount greater than zero.', { field: 'amount' })
-    }
-
-    const cents = toCents(amount)
-    let signed
-    if (tx.kind === 'transfer') signed = toCents(tx.amount) < 0 ? -cents : cents
-    else if (kind === 'income') signed = cents
-    else if (kind === 'expense') signed = -cents
-    else throw new ApiError('Choose income or expense.', { field: 'kind' })
-
-    const legs = tx.counterpartId ? [tx, db.transactions.find((t) => t.id === tx.counterpartId)] : [tx]
-    legs.forEach((leg, index) => {
-      leg.date = date
-      leg.description = cleanDescription
-      leg.amount = fromCents(index === 0 ? signed : -signed)
-      if (tx.kind !== 'transfer') leg.kind = kind
+  if (!response.ok) {
+    const field = payload?.field ?? null
+    throw new ApiError(payload?.message ?? 'The server could not complete that request.', {
+      field: FIELD_NAMES[field] ?? field,
+      status: response.status,
+      code: payload?.code ?? null,
     })
-    return tx
-  })
+  }
+  return payload
 }
 
-export function deleteTransaction(accountId, txId) {
-  return respondToMutation(() => {
-    const tx = requireTransaction(accountId, txId)
-    const removed = new Set([tx.id, tx.counterpartId].filter(Boolean))
-    db.transactions = db.transactions.filter((t) => !removed.has(t.id))
-    return { id: txId }
+const toAccount = (dto) => ({
+  id: dto.id,
+  name: dto.name,
+  type: dto.type,
+  openingBalance: dto.opening_balance,
+  currency: dto.currency,
+  balance: dto.balance,
+  transactionCount: dto.transaction_count,
+})
+
+const isNegative = (dto) => dto.kind === 'expense' || (dto.kind === 'transfer' && dto.direction === 'out')
+
+// A transfer's other leg is found by its shared transferId, so the panel can say both
+// sides change together. The description falls back to the category when there is no note.
+const toTransaction = (dto) => ({
+  id: dto.id,
+  accountId: dto.account_id,
+  date: dto.date,
+  description: dto.note || dto.category,
+  category: dto.category,
+  kind: dto.kind,
+  amount: isNegative(dto) ? `-${dto.amount}` : dto.amount,
+  transferId: dto.transfer_id,
+})
+
+export async function listAccounts() {
+  return (await request('/accounts')).map(toAccount)
+}
+
+export async function getNetWorth() {
+  const dto = await request('/net-worth')
+  return { currency: dto.currency, netWorth: dto.net_worth, accountCount: dto.account_count }
+}
+
+export async function createAccount({ name, type, openingBalance }) {
+  if (openingBalance === null || openingBalance === undefined) {
+    throw new ApiError('Enter an opening balance. Use 0 for a new account.', { field: 'openingBalance' })
+  }
+  const dto = await request('/accounts', {
+    method: 'POST',
+    body: { name, type, opening_balance: openingBalance },
   })
+  return toAccount(dto)
+}
+
+export async function renameAccount(id, name) {
+  return toAccount(await request(`/accounts/${id}`, { method: 'PATCH', body: { name } }))
+}
+
+export async function deleteAccount(id) {
+  return request(`/accounts/${id}`, { method: 'DELETE' })
+}
+
+export async function listTransactions(accountId) {
+  return (await request(`/accounts/${accountId}/transactions`)).map(toTransaction)
+}
+
+// Edit by stable ID. `amount` is a positive decimal string; the server works out the sign
+// from the kind. Transfers are edited as a linked pair, which the server does not offer yet.
+export async function updateTransaction(accountId, txId, { date, description, kind, amount }) {
+  const dto = await request(`/accounts/${accountId}/transactions/${txId}`, {
+    method: 'PUT',
+    body: { kind, amount, date, note: description },
+  })
+  return toTransaction(dto)
+}
+
+export async function deleteTransaction(accountId, txId) {
+  return request(`/accounts/${accountId}/transactions/${txId}`, { method: 'DELETE' })
 }

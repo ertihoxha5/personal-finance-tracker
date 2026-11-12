@@ -718,3 +718,19 @@ body {
   background: #f5f7fa;
   font-size: 0.85rem;
 }
+
+/* Save status (#18): text plus colour, so state never relies on colour alone. */
+.save-status {
+  margin: 0;
+  min-height: 1.5rem;
+  color: #4a5568;
+  font-size: 0.9rem;
+}
+
+.save-status-saved {
+  color: #276749;
+}
+
+.save-status-failed {
+  color: #b42318;
+}

@@ -19,7 +19,7 @@ from typing import Protocol
 
 from pft.domain.account import Account, AccountTransaction
 from pft.domain.category import AccountType
-from pft.domain.exceptions import AccountNotFoundError
+from pft.domain.exceptions import AccountNotFoundError, DataImportError
 from pft.domain.money import Money
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,16 @@ class Ledger:
         self._next_account_id += 1
         return account
 
+    def restore_account(self, account: Account) -> None:
+        """Add an account that already has its stored ID (used by repositories when loading).
+
+        The next new ID moves past every restored one, so IDs stay unique.
+        """
+        if account.id in self._accounts:
+            raise DataImportError(f"account ID {account.id} appears twice", field="id")
+        self._accounts[account.id] = account
+        self._next_account_id = max(self._next_account_id, account.id + 1)
+
     def close_account(self, account_id: int) -> Account:
         """Remove and return the account. Observers are not told; only transactions notify."""
         account = self.account(account_id)
@@ -89,6 +99,10 @@ class Ledger:
         removed = self.account(account_id).remove(tx_id)
         self._notify(TransactionRemoved(account_id, removed))
         return removed
+
+    def next_transaction_id(self) -> int:
+        """One more than the highest transaction ID in any account (1 when there are none)."""
+        return max((t.id for t in self.all_transactions()), default=0) + 1
 
     def all_transactions(self) -> Iterator[AccountTransaction]:
         """Every transaction of every account, one after another, without building a list."""

@@ -118,3 +118,9 @@ class DataImportError(FinanceError):
     """Imported or stored data could not be read into domain objects."""
 
     code = "data_import_error"
+
+
+class StorageError(FinanceError):
+    """Saving or loading data failed; the previously saved data is unchanged."""
+
+    code = "storage_error"

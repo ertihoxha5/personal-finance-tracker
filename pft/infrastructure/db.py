@@ -1,9 +1,9 @@
 """SQLite connection and schema setup.
 
 All money amounts are stored as integer cents to avoid floating-point rounding.
-The full persistence layer (repositories, migrations) is owned by task #18;
-this module only provides the database location, a connection helper and an
-idempotent schema initialiser.
+This module provides the database location, a connection helper and an idempotent
+schema initialiser that also upgrades a task-#5 database. Reading and writing domain
+objects is SqliteRepository (pft/infrastructure/repository.py, task #18).
 """
 
 from __future__ import annotations
@@ -20,23 +20,61 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    opening_balance_cents INTEGER NOT NULL DEFAULT 0
+    opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+    type TEXT NOT NULL DEFAULT 'bank',
+    currency TEXT NOT NULL DEFAULT 'EUR'
 );
 
+-- amount_cents is always positive; kind (and a transfer's direction) gives the sign.
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER NOT NULL REFERENCES accounts(id),
+    kind TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency TEXT NOT NULL DEFAULT 'EUR',
     occurred_on TEXT NOT NULL,
-    description TEXT NOT NULL,
-    amount_cents INTEGER NOT NULL
+    category TEXT NOT NULL DEFAULT 'other',
+    note TEXT NOT NULL DEFAULT '',
+    transfer_id TEXT,
+    direction TEXT
 );
 """
 
-SEED_ACCOUNTS = [("Checking", 150_000), ("Savings", 500_000)]
+# Task #5 created accounts without type/currency and transactions with a signed amount and a
+# description. This rebuilds the old transactions table in the #18 shape inside one
+# transaction, keeping every row, so a failed upgrade leaves the old database as it was.
+_UPGRADE_FROM_V1 = """
+BEGIN;
+ALTER TABLE accounts ADD COLUMN type TEXT NOT NULL DEFAULT 'bank';
+ALTER TABLE accounts ADD COLUMN currency TEXT NOT NULL DEFAULT 'EUR';
+ALTER TABLE transactions RENAME TO transactions_v1;
+CREATE TABLE transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    kind TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency TEXT NOT NULL DEFAULT 'EUR',
+    occurred_on TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'other',
+    note TEXT NOT NULL DEFAULT '',
+    transfer_id TEXT,
+    direction TEXT
+);
+INSERT INTO transactions (id, account_id, kind, amount_cents, occurred_on, note)
+SELECT id, account_id, CASE WHEN amount_cents < 0 THEN 'expense' ELSE 'income' END,
+       ABS(amount_cents), occurred_on, description
+FROM transactions_v1 WHERE amount_cents != 0;
+DROP TABLE transactions_v1;
+COMMIT;
+"""
+
+# (account, type, opening balance in cents)
+SEED_ACCOUNTS = [("Checking", "bank", 150_000), ("Savings", "savings", 500_000)]
+# (account, date, kind, category, note, positive amount in cents)
 SEED_TRANSACTIONS = [
-    ("Checking", "2026-11-01", "Salary", 220_000),
-    ("Checking", "2026-11-02", "Groceries", -6_450),
-    ("Checking", "2026-11-03", "Rent", -60_000),
+    ("Checking", "2026-11-01", "income", "salary", "Salary", 220_000),
+    ("Checking", "2026-11-02", "expense", "food", "Groceries", 6_450),
+    ("Checking", "2026-11-03", "expense", "rent", "Rent", 60_000),
 ]
 
 
@@ -65,6 +103,7 @@ def init_db(path: Path | None = None, *, seed: bool = False) -> Path:
     db_path = path if path is not None else get_db_path()
     conn = connect(db_path)
     try:
+        _upgrade_if_old(conn)
         with conn:
             conn.executescript(SCHEMA)
             if seed:
@@ -74,16 +113,26 @@ def init_db(path: Path | None = None, *, seed: bool = False) -> Path:
     return db_path
 
 
+def _upgrade_if_old(conn: sqlite3.Connection) -> None:
+    """Move a task-#5 database to the current shape; does nothing for a new or current one."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)")}
+    if columns and "kind" not in columns:
+        conn.executescript(_UPGRADE_FROM_V1)
+
+
 def _seed(conn: sqlite3.Connection) -> None:
     (count,) = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()
     if count:
         return
     conn.executemany(
-        "INSERT INTO accounts (name, opening_balance_cents) VALUES (?, ?)",
+        "INSERT INTO accounts (name, type, opening_balance_cents) VALUES (?, ?, ?)",
         SEED_ACCOUNTS,
     )
     conn.executemany(
-        "INSERT INTO transactions (account_id, occurred_on, description, amount_cents) "
-        "SELECT id, ?, ?, ? FROM accounts WHERE name = ?",
-        [(day, desc, cents, account) for account, day, desc, cents in SEED_TRANSACTIONS],
+        "INSERT INTO transactions (account_id, occurred_on, kind, category, note, amount_cents) "
+        "SELECT id, ?, ?, ?, ?, ? FROM accounts WHERE name = ?",
+        [
+            (day, kind, category, note, cents, account)
+            for account, day, kind, category, note, cents in SEED_TRANSACTIONS
+        ],
     )

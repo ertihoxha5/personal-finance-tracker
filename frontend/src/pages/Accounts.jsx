@@ -14,6 +14,7 @@ import AccountsTable from '../components/accounts/AccountsTable.jsx'
 import ConfirmDialog from '../components/accounts/ConfirmDialog.jsx'
 import TransactionsPanel from '../components/accounts/TransactionsPanel.jsx'
 import NetWorthCard from '../components/NetWorthCard.jsx'
+import SaveStatus from '../components/SaveStatus.jsx'
 import { useLoad } from '../hooks/useLoad.js'
 import { formatEUR } from '../lib/money.js'
 
@@ -29,6 +30,8 @@ export default function Accounts() {
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState(null)
+  // { state: 'idle' | 'saving' | 'saved' | 'failed', message }
+  const [save, setSave] = useState({ state: 'idle' })
   // { kind: 'account' | 'transaction', item, error }
   const [pendingDelete, setPendingDelete] = useState(null)
 
@@ -36,14 +39,17 @@ export default function Accounts() {
   // list are re-read from the API; on failure the caller decides where to show the error.
   async function mutate(action, successText) {
     setBusy(true)
+    setSave({ state: 'saving' })
     try {
       const result = await action()
+      setSave({ state: 'saved' })
       accounts.reload()
       netWorth.reload()
       transactions.reload()
       setNotice({ kind: 'success', text: successText })
       return { ok: true, result }
     } catch (error) {
+      setSave({ state: 'failed', message: error.message })
       if (error.status === 404) {
         accounts.reload()
         netWorth.reload()
@@ -150,6 +156,8 @@ export default function Accounts() {
           </button>
         )}
       </div>
+
+      <SaveStatus save={save} />
 
       <div className="notice-slot" role="status">
         {notice && (

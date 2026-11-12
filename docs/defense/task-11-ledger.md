@@ -36,3 +36,5 @@
   `GET /api/net-worth`, plus the create/rename/delete/edit mutations, wired in #36. The
   function signatures in `accounts.js` are kept so only the bodies change.
 - So the full React deliverable of #11 is **not** complete until that integration lands.
+- **Update:** resolved in #18. `accounts.js` now calls FastAPI, which loads the Ledger from SQLite;
+  see `task-18-repository.md`.
