@@ -66,6 +66,12 @@ class InvalidCategoryError(InvalidChoiceError):
     code = "invalid_category"
 
 
+class InvalidTextError(FinanceError):
+    """A required text value is missing, empty or only whitespace."""
+
+    code = "invalid_text"
+
+
 class AccountNotFoundError(FinanceError):
     """No account with the requested ID exists."""
 
