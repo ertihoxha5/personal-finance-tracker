@@ -42,6 +42,7 @@ class StubTransaction:
     account_id: int = 1
     date: date = date(2026, 11, 15)
     amount: Money = Money.of("25.00")
+    note: str = ""
 
 
 def test_category_matches_any_selected_category() -> None:

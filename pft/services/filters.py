@@ -1,4 +1,4 @@
-"""Composable transaction predicates for task #08.
+"""Composable transaction predicates and sorting for tasks #08 and #15.
 
 The structural interface follows #14's planned Transaction fields without
 requiring that class or #10's enums to exist yet. Enum members can be passed
@@ -9,6 +9,7 @@ from calendar import monthrange
 from collections.abc import Callable, Iterable, Iterator
 from datetime import date
 from functools import partial
+from operator import attrgetter
 from typing import Protocol, TypeVar
 
 from pft.domain.money import Money
@@ -31,6 +32,9 @@ class FilterableTransaction(Protocol):
 
     @property
     def amount(self) -> Money: ...
+
+    @property
+    def note(self) -> str: ...
 
 
 Predicate = Callable[[FilterableTransaction], bool]
@@ -100,3 +104,28 @@ def month_preset(year: int, month: int) -> partial[Predicate]:
     first_day = date(year, month, 1)
     last_day = date(year, month, monthrange(year, month)[1])
     return partial(between, first_day, last_day)
+
+
+def text_contains(text: str) -> Predicate:
+    """Match note text without case sensitivity; blank search accepts every note.
+
+    Surrounding search whitespace is ignored, matching the Transactions screen.
+    casefold also handles Unicode case pairs such as 'Straße' and 'STRASSE'.
+    """
+    query = text.strip().casefold()
+    return lambda transaction: query in transaction.note.casefold()
+
+
+def sort_transactions(
+    items: Iterable[TransactionT], key: str = "date", reverse: bool = False
+) -> list[TransactionT]:
+    """Return a stable sorted list by date, amount magnitude or category value.
+
+    Equal keys keep input order in both directions. The iterable may be the
+    lazy result of apply_filters; sorting consumes it and preserves the source
+    objects. Money enforces matching currencies during amount comparison.
+    """
+    valid_keys = ("date", "amount", "category")
+    if key not in valid_keys:
+        raise ValueError(f"unknown sort key {key!r}; choose one of: {', '.join(valid_keys)}")
+    return sorted(items, key=attrgetter(key), reverse=reverse)
