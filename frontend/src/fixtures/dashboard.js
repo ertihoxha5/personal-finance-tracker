@@ -1,7 +1,6 @@
-// Synthetic dashboard data, shaped like the future GET /api/dashboard?month=YYYY-MM
-// response (#19). Amounts are decimal strings in EUR; expenses in recentTransactions are
-// negative. Totals, savingsRate and category sums are precomputed here, exactly as the API
-// will send them, so React never does arithmetic on money.
+// Synthetic dashboard data used by the CSV export tests. The Dashboard screen itself reads
+// GET /api/dashboard (src/api/dashboard.js); amounts here are decimal strings in EUR.
+// React never does arithmetic on money.
 
 export const FIXTURE_MONTHS = ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]
 

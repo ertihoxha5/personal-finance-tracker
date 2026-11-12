@@ -8,48 +8,9 @@
 // Accounts screen works with a description and a signed amount, so toTransaction() does that
 // one translation here, as a string operation (never through Number()).
 
-export class ApiError extends Error {
-  constructor(message, { field = null, status = 400, code = null } = {}) {
-    super(message)
-    this.name = 'ApiError'
-    this.field = field
-    this.status = status
-    this.code = code
-  }
-}
+import { ApiError, request } from './http.js'
 
-// Server field names -> the names the Accounts forms use.
-const FIELD_NAMES = { opening_balance: 'openingBalance', account_id: 'accountId' }
-
-async function request(path, { method = 'GET', body } = {}) {
-  let response
-  try {
-    response = await fetch(`/api${path}`, {
-      method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-  } catch {
-    throw new ApiError('The server could not be reached. Check that the API is running.', { status: 0 })
-  }
-
-  let payload = null
-  try {
-    payload = await response.json()
-  } catch {
-    // A non-JSON body (a proxy error page) is reported with the generic message below.
-  }
-
-  if (!response.ok) {
-    const field = payload?.field ?? null
-    throw new ApiError(payload?.message ?? 'The server could not complete that request.', {
-      field: FIELD_NAMES[field] ?? field,
-      status: response.status,
-      code: payload?.code ?? null,
-    })
-  }
-  return payload
-}
+export { ApiError }
 
 const toAccount = (dto) => ({
   id: dto.id,

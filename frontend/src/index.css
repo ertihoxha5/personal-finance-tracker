@@ -734,3 +734,20 @@ body {
 .save-status-failed {
   color: #b42318;
 }
+
+/* Top spending categories (#19): rank comes from list order, so it is not colour-only. */
+.top-categories {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.4rem;
+}
+
+.top-categories li {
+  padding-left: 0.3rem;
+}
+
+.top-categories li > span:first-child {
+  margin-right: 0.75rem;
+  font-weight: 600;
+}

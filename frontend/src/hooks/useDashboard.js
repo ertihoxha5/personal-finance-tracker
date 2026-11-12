@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchDashboard } from '../api/dashboard.js'
 
 // Returns { status, data, error, retry } where status is
-// 'loading' | 'success' | 'empty' | 'error'. While reloading, data keeps the
-// previous response so controls such as the month picker stay populated.
+// 'loading' | 'success' | 'empty' | 'error'. `month` may be null: the server then picks the
+// latest month with data and data.month says which one it was.
+// While reloading, data keeps the previous response so the month picker stays populated.
 export function useDashboard(month) {
   const [state, setState] = useState({ status: 'loading', data: null, error: null })
   const [attempt, setAttempt] = useState(0)
@@ -15,7 +16,8 @@ export function useDashboard(month) {
     fetchDashboard(month).then(
       (data) => {
         if (cancelled) return
-        const empty = data.recentTransactions.length === 0 && data.categories.length === 0
+        // A month without transactions is a normal state, not an error.
+        const empty = data.summary.transactionCount === 0
         setState({ status: empty ? 'empty' : 'success', data, error: null })
       },
       (error) => {

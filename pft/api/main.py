@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from pft.api.accounts import router as accounts_router
+from pft.api.dashboard import router as dashboard_router
 from pft.api.exports import router as exports_router
 from pft.domain.exceptions import (
     AccountNotFoundError,
@@ -22,6 +23,7 @@ PORT = 8000
 app = FastAPI(title="Personal Finance Tracker")
 app.include_router(exports_router)
 app.include_router(accounts_router)
+app.include_router(dashboard_router)
 
 
 def _status_for(error: FinanceError) -> int:

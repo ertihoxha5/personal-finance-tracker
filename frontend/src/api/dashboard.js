@@ -1,30 +1,56 @@
-import { DASHBOARD_FIXTURES, FIXTURE_MONTHS, emptyDashboard } from '../fixtures/dashboard.js'
+import { request } from './http.js'
+import { categoryLabel } from '../lib/labels.js'
 
-export const DEFAULT_MONTH = FIXTURE_MONTHS[FIXTURE_MONTHS.length - 1]
+// Dashboard client (#19): GET /api/dashboard?month=YYYY-MM, built by pft.services.reports
+// (MonthlySummary). Totals, savings rate, category totals and the previous-month change are
+// all calculated by the server; this file only renames fields and attaches display labels.
+// Leave the month out to get the latest month that has data.
 
-const FIXTURE_DELAY_MS = 300
+const toCategory = (dto) => ({
+  id: dto.category,
+  name: categoryLabel(dto.category),
+  total: dto.total,
+})
 
-// Stage B data source: serves fixtures. #19 replaces this body with
-// fetch(`/api/dashboard?month=${month}`) and keeps the same resolved shape.
-//
-// Append ?state=loading | empty | error to the page URL to preview the other UI states.
-export function fetchDashboard(month) {
-  const state = new URLSearchParams(window.location.search).get('state')
-  if (state === 'loading') {
-    return new Promise(() => {})
+// The API sends an unsigned amount and a kind; the lists show expenses as negative.
+// This is a string operation, never Number(), so no rounding creeps in.
+const signed = (dto) => (dto.kind === 'expense' ? `-${dto.amount}` : dto.amount)
+
+const toTransaction = (dto) => ({
+  id: dto.id,
+  date: dto.date,
+  description: dto.note || categoryLabel(dto.category),
+  category: { id: dto.category, name: categoryLabel(dto.category) },
+  account: dto.account,
+  amount: signed(dto),
+})
+
+const toTotals = (dto) => ({
+  income: dto.income,
+  expenses: dto.expenses,
+  net: dto.net,
+  savingsRate: dto.savings_rate,
+  transactionCount: dto.transaction_count,
+})
+
+export async function fetchDashboard(month) {
+  const query = month ? `?month=${encodeURIComponent(month)}` : ''
+  const dto = await request(`/dashboard${query}`)
+  return {
+    month: dto.month,
+    currency: dto.currency,
+    availableMonths: dto.available_months,
+    summary: toTotals(dto.summary),
+    // The previous month, with its change; `hasData` tells the card whether to compare.
+    previous: {
+      ...toTotals(dto.previous),
+      month: dto.previous.month,
+      hasData: dto.previous.transaction_count > 0,
+      changes: dto.changes,
+    },
+    topCategories: dto.top_categories.map(toCategory),
+    categories: dto.categories.map(toCategory),
+    trend: dto.trend,
+    recentTransactions: dto.recent_transactions.map(toTransaction),
   }
-
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (state === 'error') {
-        reject(new Error('The dashboard could not be loaded.'))
-      } else if (state === 'empty') {
-        resolve(emptyDashboard(month))
-      } else if (DASHBOARD_FIXTURES[month]) {
-        resolve(DASHBOARD_FIXTURES[month])
-      } else {
-        reject(new Error(`No data for ${month}.`))
-      }
-    }, FIXTURE_DELAY_MS)
-  })
 }

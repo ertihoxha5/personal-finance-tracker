@@ -21,12 +21,15 @@ export function transactionExport(rows, filters) {
   }
 }
 
+// Only the money figures and the rate are exported, not counts or other display fields.
+const SUMMARY_LABELS = ['income', 'expenses', 'net', 'savingsRate']
+
 export function reportExport(data) {
   return {
     columns: ['month', 'section', 'label', 'value', 'unit'],
     filters: { month: data.month },
     rows: [
-      ...Object.entries(data.summary).map(([label, value]) => ({
+      ...SUMMARY_LABELS.map((label) => [label, data.summary[label]]).map(([label, value]) => ({
         month: data.month, section: 'summary', label, value,
         unit: label === 'savingsRate' ? '%' : data.currency,
       })),
