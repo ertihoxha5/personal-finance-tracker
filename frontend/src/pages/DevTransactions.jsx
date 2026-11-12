@@ -1,11 +1,14 @@
 import { useState } from 'react'
+import { fromApi } from '../api/transactions.js'
 import TransactionForm from '../components/transactions/TransactionForm.jsx'
 import TransactionRows from '../components/transactions/TransactionRows.jsx'
 import { FIELD_ERROR, PAGE_ERROR } from '../fixtures/apiErrors.js'
 import { FILTER_ACCOUNTS, DEMO_TRANSACTIONS } from '../fixtures/transactions.js'
 
-// Development-only demo for #14: the shared income/expense form with fixture
-// responses, and rows of all three kinds. Registered in App.jsx only in DEV.
+// Development-only demo for #14/#17: the shared income/expense form with fixture
+// responses, and rows of all three kinds, both transfer directions and one unknown kind.
+// Fixture DTOs and the echoed request body go through fromApi, as live API data will (#19).
+// Registered in App.jsx only in DEV.
 
 const SCENARIOS = [
   { id: 'success', label: 'Success', delay: 500 },
@@ -19,7 +22,7 @@ const accountName = (id) => FILTER_ACCOUNTS.find((account) => account.id === id)
 
 export default function DevTransactions() {
   const [scenarioId, setScenarioId] = useState('success')
-  const [rows, setRows] = useState(DEMO_TRANSACTIONS)
+  const [rows, setRows] = useState(() => DEMO_TRANSACTIONS.map(fromApi))
   const [lastBody, setLastBody] = useState(null)
 
   async function submit(dto) {
@@ -27,7 +30,7 @@ export default function DevTransactions() {
     setLastBody(dto)
     await wait(scenario.delay)
     if (scenario.error) throw scenario.error
-    setRows((prev) => [...prev, { ...dto, id: Math.max(...prev.map((r) => r.id)) + 1 }])
+    setRows((prev) => [...prev, fromApi({ ...dto, id: Math.max(...prev.map((r) => r.id)) + 1 })])
   }
 
   return (

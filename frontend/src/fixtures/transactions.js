@@ -30,4 +30,7 @@ export const DEMO_TRANSACTIONS = [
   { id: 303, account_id: 1, kind: 'transfer', direction: 'out', transfer_id: 'tr-1', amount: '300.00', date: '2026-11-05', category: 'other', note: 'Move to savings' },
   { id: 304, account_id: 2, kind: 'transfer', direction: 'in', transfer_id: 'tr-1', amount: '300.00', date: '2026-11-05', category: 'other', note: 'Move to savings' },
   { id: 305, account_id: 3, kind: 'expense', amount: '12.50', date: '2026-11-10', category: 'fun', note: '' },
+  // #17: a kind this frontend does not know (as if the API added one), to show the
+  // adapter's "Unknown type" row instead of a crash.
+  { id: 306, account_id: 1, kind: 'refund', amount: '9.99', date: '2026-11-12', category: 'other', note: 'Unknown kind demo' },
 ]

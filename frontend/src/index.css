@@ -334,6 +334,17 @@ body {
   color: #2c5282;
 }
 
+/* #17: a type the adapter does not know; dashed so it stands out without colour. */
+.kind-unknown {
+  color: #4a5568;
+  border-style: dashed;
+}
+
+.kind-raw {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+
 .kind-choice {
   display: flex;
   flex-wrap: wrap;

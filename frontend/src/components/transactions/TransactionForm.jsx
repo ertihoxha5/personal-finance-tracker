@@ -1,8 +1,8 @@
 import { useId, useMemo } from 'react'
 import useFormValidation from '../../hooks/useFormValidation.js'
+import { API_TO_FORM_FIELD, toApi } from '../../api/transactions.js'
 import { CATEGORY_LABELS, toOptions } from '../../lib/labels.js'
-import { parseMoneyInput } from '../../lib/money.js'
-import { isoDate, toDto, todayISO } from '../../lib/transactions.js'
+import { isoDate, todayISO } from '../../lib/transactions.js'
 import { positiveDecimal, required } from '../../lib/validation.js'
 import MoneyInput from '../MoneyInput.jsx'
 import PageAlert from '../PageAlert.jsx'
@@ -11,7 +11,7 @@ import TextField from '../TextField.jsx'
 
 // Shared income/expense form (#14): kind, account, amount, date, category and note.
 // Validation, server errors and the double-submit guard come from useFormValidation
-// (#12). onSubmit(dto) receives the request body from toDto and may throw an API error;
+// (#12). onSubmit(dto) receives the request body from toApi (#17) and may throw an API error;
 // the form clears after it resolves. Transfers use their own form (a later task).
 
 const KIND_CHOICES = [
@@ -28,9 +28,6 @@ const RULES = {
   category: (value) => required(value, 'Choose a category.'),
   note: () => null,
 }
-
-// Server errors use the API field names; map them onto this form's fields.
-const SERVER_FIELDS = { account_id: 'accountId' }
 
 export default function TransactionForm({ accounts, onSubmit, defaultAccountId = '', title = 'New transaction' }) {
   const uid = useId()
@@ -51,7 +48,7 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
     rules: RULES,
     onSubmit: async (values) => {
       try {
-        await onSubmit(toDto({ ...values, amount: parseMoneyInput(values.amount).value }))
+        await onSubmit(toApi(values))
       } catch (error) {
         throw renameFields(error)
       }
@@ -147,11 +144,12 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
   )
 }
 
+// Server errors use the API field names; map them onto this form's fields.
 function renameFields(error) {
   // A plain object, not a spread: an Error's message is not an enumerable property.
   const rename = (item) =>
-    item && typeof item === 'object' && Object.hasOwn(SERVER_FIELDS, item.field ?? '')
-      ? { code: item.code, message: item.message, field: SERVER_FIELDS[item.field], status: item.status }
+    item && typeof item === 'object' && Object.hasOwn(API_TO_FORM_FIELD, item.field ?? '')
+      ? { code: item.code, message: item.message, field: API_TO_FORM_FIELD[item.field], status: item.status }
       : item
   if (Array.isArray(error)) return error.map(rename)
   if (error && typeof error === 'object' && Array.isArray(error.errors)) return { ...error, errors: error.errors.map(rename) }
