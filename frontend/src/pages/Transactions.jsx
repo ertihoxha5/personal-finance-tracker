@@ -34,12 +34,13 @@ export default function Transactions() {
     }))
   }
 
-  function field(key, label, type = 'text') {
+  function field(key, label, type = 'text', placeholder) {
     return (
       <div className="field">
         <label htmlFor={`filter-${key}`}>{label}</label>
         <input
           id={`filter-${key}`} type={type} value={filters[key]}
+          placeholder={placeholder}
           inputMode={key === 'minimum' || key === 'maximum' ? 'decimal' : undefined}
           onChange={(event) => update(key, event.target.value)}
           aria-invalid={Boolean(errors[key])}
@@ -94,7 +95,7 @@ export default function Transactions() {
           {field('end', 'End date', 'date')}
           {field('minimum', 'Minimum amount (EUR)')}
           {field('maximum', 'Maximum amount (EUR)')}
-          {field('note', 'Note contains')}
+          {field('note', 'Search notes', 'search', 'Search notes, e.g. lunch')}
           <div className="field">
             <label htmlFor="transaction-sort-key">Sort by</label>
             <select
