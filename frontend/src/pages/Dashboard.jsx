@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { DEFAULT_MONTH } from '../api/dashboard.js'
+import { getNetWorth } from '../api/accounts.js'
 import { useDashboard } from '../hooks/useDashboard.js'
+import { useLoad } from '../hooks/useLoad.js'
+import NetWorthCard from '../components/NetWorthCard.jsx'
 import MonthPicker from '../components/dashboard/MonthPicker.jsx'
 import SummaryCards from '../components/dashboard/SummaryCards.jsx'
 import IncomeExpenseChart from '../components/dashboard/IncomeExpenseChart.jsx'
@@ -16,6 +19,8 @@ export default function Dashboard() {
   const [month, setMonth] = useState(DEFAULT_MONTH)
   const { status, data, error, retry } = useDashboard(month)
   const months = data?.availableMonths ?? [month]
+  // Re-read on every visit, so it reflects mutations made on the Accounts page.
+  const netWorth = useLoad(getNetWorth, 'net-worth')
 
   return (
     <section className="dashboard" aria-labelledby="dashboard-title">
@@ -23,6 +28,8 @@ export default function Dashboard() {
         <h2 id="dashboard-title">Dashboard</h2>
         <MonthPicker months={months} value={month} onChange={setMonth} disabled={!data} />
       </header>
+
+      <NetWorthCard net={netWorth} />
 
       {status === 'loading' && <DashboardLoading />}
       {status === 'error' && <DashboardError message={error.message} onRetry={retry} />}

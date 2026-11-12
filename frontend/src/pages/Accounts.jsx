@@ -3,6 +3,7 @@ import {
   createAccount,
   deleteAccount,
   deleteTransaction,
+  getNetWorth,
   listAccounts,
   listTransactions,
   renameAccount,
@@ -12,11 +13,13 @@ import AccountForm from '../components/accounts/AccountForm.jsx'
 import AccountsTable from '../components/accounts/AccountsTable.jsx'
 import ConfirmDialog from '../components/accounts/ConfirmDialog.jsx'
 import TransactionsPanel from '../components/accounts/TransactionsPanel.jsx'
+import NetWorthCard from '../components/NetWorthCard.jsx'
 import { useLoad } from '../hooks/useLoad.js'
 import { formatEUR } from '../lib/money.js'
 
 export default function Accounts() {
   const accounts = useLoad(listAccounts, 'accounts')
+  const netWorth = useLoad(getNetWorth, 'net-worth')
   const [selectedId, setSelectedId] = useState(null)
   const transactions = useLoad(
     () => (selectedId === null ? Promise.resolve(null) : listTransactions(selectedId)),
@@ -36,12 +39,14 @@ export default function Accounts() {
     try {
       const result = await action()
       accounts.reload()
+      netWorth.reload()
       transactions.reload()
       setNotice({ kind: 'success', text: successText })
       return { ok: true, result }
     } catch (error) {
       if (error.status === 404) {
         accounts.reload()
+        netWorth.reload()
         transactions.reload()
       }
       return { ok: false, error }
@@ -156,6 +161,8 @@ export default function Accounts() {
           </p>
         )}
       </div>
+
+      {hasAccounts && <NetWorthCard net={netWorth} />}
 
       {creating && <AccountForm onSubmit={handleCreate} onCancel={() => setCreating(false)} busy={busy} />}
       {list}

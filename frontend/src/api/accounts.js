@@ -109,6 +109,20 @@ export function listAccounts() {
   })
 }
 
+// Stand-in for the net-worth total: the sum of all account balances, computed here in
+// integer cents (as the Ledger's net_worth property does), never in React.
+export function getNetWorth() {
+  return respond(() => {
+    if (previewState() === 'error') throw new ApiError('Net worth could not be loaded.', { status: 500 })
+    const balances = previewState() === 'empty' ? [] : db.accounts.map((a) => toCents(withBalance(a).balance))
+    return {
+      currency: 'EUR',
+      netWorth: fromCents(balances.reduce((sum, cents) => sum + cents, 0)),
+      accountCount: balances.length,
+    }
+  })
+}
+
 export function createAccount({ name, type, openingBalance }) {
   return respondToMutation(() => {
     const cleanName = validateName(name)
