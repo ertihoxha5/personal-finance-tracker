@@ -2,6 +2,7 @@ import { parseMoneyInput } from './money.js'
 
 export const emptyFilters = () => ({
   categories: [], kind: '', account: '', start: '', end: '', minimum: '', maximum: '', note: '',
+  sortKey: 'date', sortDirection: 'asc',
 })
 
 // Compare normalized decimal strings using integer cents, without float rounding.
@@ -38,4 +39,35 @@ export function filterTransactions(items, filters) {
     (maximum === null || cents(item.amount) <= cents(maximum)) &&
     (!note || item.note.toLocaleLowerCase('en').includes(note))
   ))
+}
+
+const SORT_VALUES = {
+  date: (transaction) => transaction.date,
+  amount: (transaction) => cents(transaction.amount),
+  category: (transaction) => transaction.category,
+}
+
+export function sortTransactions(items, key = 'date', reverse = false) {
+  if (!Object.hasOwn(SORT_VALUES, key)) {
+    throw new RangeError(`Unknown sort key '${key}'; choose one of: date, amount, category.`)
+  }
+  const valueOf = SORT_VALUES[key]
+  return [...items].sort((left, right) => {
+    const leftValue = valueOf(left)
+    const rightValue = valueOf(right)
+    let comparison = 0
+    if (leftValue < rightValue) comparison = -1
+    if (leftValue > rightValue) comparison = 1
+    return reverse ? -comparison : comparison
+  })
+}
+
+// The same pipeline feeds the table and its order tests. Older filter objects
+// without sort settings use the Python sort_transactions defaults.
+export function selectTransactions(items, filters) {
+  return sortTransactions(
+    filterTransactions(items, filters),
+    filters.sortKey ?? 'date',
+    filters.sortDirection === 'desc',
+  )
 }

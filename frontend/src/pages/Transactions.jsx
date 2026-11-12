@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { FILTER_ACCOUNTS, FILTER_CATEGORIES, FILTER_KINDS, FILTER_TRANSACTIONS } from '../fixtures/transactions.js'
 import { formatDate } from '../lib/format.js'
 import { formatEUR } from '../lib/money.js'
-import { emptyFilters, filterTransactions, validateFilters } from '../lib/transactionFilters.js'
+import { emptyFilters, selectTransactions, validateFilters } from '../lib/transactionFilters.js'
 import './Transactions.css'
 
 const titleCase = (text) => text[0].toUpperCase() + text.slice(1)
@@ -12,7 +12,7 @@ export default function Transactions() {
   const [filters, setFilters] = useState(emptyFilters)
   const { errors } = validateFilters(filters)
   const invalid = Object.keys(errors).length > 0
-  const results = filterTransactions(FILTER_TRANSACTIONS, filters)
+  const results = selectTransactions(FILTER_TRANSACTIONS, filters)
   const update = (key, value) => setFilters((previous) => ({ ...previous, [key]: value }))
   const active = [
     ...filters.categories.map((category) => `Category: ${category}`),
@@ -61,7 +61,7 @@ export default function Transactions() {
         <div className="page-header">
           <h3 id="filters-title">Filter transactions</h3>
           <button type="button" className="button button-secondary" onClick={() => setFilters(emptyFilters())}>
-            Reset filters
+            Reset filters and sorting
           </button>
         </div>
         <fieldset>
@@ -95,6 +95,29 @@ export default function Transactions() {
           {field('minimum', 'Minimum amount (EUR)')}
           {field('maximum', 'Maximum amount (EUR)')}
           {field('note', 'Note contains')}
+          <div className="field">
+            <label htmlFor="transaction-sort-key">Sort by</label>
+            <select
+              id="transaction-sort-key"
+              value={filters.sortKey}
+              onChange={(event) => update('sortKey', event.target.value)}
+            >
+              <option value="date">Date</option>
+              <option value="amount">Amount</option>
+              <option value="category">Category</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="transaction-sort-direction">Sort direction</label>
+            <select
+              id="transaction-sort-direction"
+              value={filters.sortDirection}
+              onChange={(event) => update('sortDirection', event.target.value)}
+            >
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </div>
         </div>
         <p className="field-hint">Filters apply together. Dates and amount bounds are inclusive. Amounts use magnitudes, including expenses and transfers.</p>
       </form>
@@ -103,11 +126,11 @@ export default function Transactions() {
         {active.length ? <ul className="active-filters">{active.map((label) => <li key={label}>{label}</li>)}</ul> : <p>No filters — showing all sample transactions.</p>}
       </div>
       <div className="card">
-        <p role="status">{invalid ? 'Correct the filter values to see results.' : `${results.length} of ${FILTER_TRANSACTIONS.length} transactions`}</p>
+        <p role="status">{invalid ? 'Correct the filter values to see results.' : `${results.length} of ${FILTER_TRANSACTIONS.length} transactions · Sorted by ${filters.sortKey}, ${filters.sortDirection === 'desc' ? 'descending' : 'ascending'}`}</p>
         {invalid ? <p role="alert">The filter range is invalid. Check the highlighted fields.</p> : results.length === 0 ? (
           <div className="state-message">
             <h3>No matching transactions</h3>
-            <p>Broaden your filters or use Reset filters to show all sample transactions.</p>
+            <p>Broaden your filters or reset filters and sorting to show all sample transactions.</p>
           </div>
         ) : (
           <div className="table-scroll" role="region" aria-label="Filtered transactions" tabIndex={0}>
