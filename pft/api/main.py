@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from pft.api.exports import router as exports_router
+
 HOST = "127.0.0.1"
 PORT = 8000
 
 app = FastAPI(title="Personal Finance Tracker")
+app.include_router(exports_router)
 
 
 @app.get("/api/health")

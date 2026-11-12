@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { transactionExport } from '../api/exports.js'
+import CsvDownload from '../components/CsvDownload.jsx'
 import { FILTER_ACCOUNTS, FILTER_CATEGORIES, FILTER_KINDS, FILTER_TRANSACTIONS } from '../fixtures/transactions.js'
 import { formatDate } from '../lib/format.js'
 import { formatEUR } from '../lib/money.js'
@@ -127,6 +129,12 @@ export default function Transactions() {
         {active.length ? <ul className="active-filters">{active.map((label) => <li key={label}>{label}</li>)}</ul> : <p>No filters — showing all sample transactions.</p>}
       </div>
       <div className="card">
+        <CsvDownload
+          defaultFilename="transactions.csv"
+          label="Download transactions CSV"
+          disabled={invalid}
+          buildExport={() => transactionExport(results, filters)}
+        />
         <p role="status">{invalid ? 'Correct the filter values to see results.' : `${results.length} of ${FILTER_TRANSACTIONS.length} transactions · Sorted by ${filters.sortKey}, ${filters.sortDirection === 'desc' ? 'descending' : 'ascending'}`}</p>
         {invalid ? <p role="alert">The filter range is invalid. Check the highlighted fields.</p> : results.length === 0 ? (
           <div className="state-message">

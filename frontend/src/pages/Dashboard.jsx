@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { DEFAULT_MONTH } from '../api/dashboard.js'
 import { getNetWorth } from '../api/accounts.js'
+import { reportExport } from '../api/exports.js'
+import CsvDownload from '../components/CsvDownload.jsx'
 import { useDashboard } from '../hooks/useDashboard.js'
 import { useLoad } from '../hooks/useLoad.js'
 import NetWorthCard from '../components/NetWorthCard.jsx'
@@ -30,6 +32,16 @@ export default function Dashboard() {
       </header>
 
       <NetWorthCard net={netWorth} />
+
+      <div className="card">
+        <CsvDownload
+          key={month}
+          defaultFilename={`monthly-report-${month}.csv`}
+          label="Download report CSV"
+          disabled={!data || data.month !== month || !['success', 'empty'].includes(status)}
+          buildExport={() => reportExport(data)}
+        />
+      </div>
 
       {status === 'loading' && <DashboardLoading />}
       {status === 'error' && <DashboardError message={error.message} onRetry={retry} />}
