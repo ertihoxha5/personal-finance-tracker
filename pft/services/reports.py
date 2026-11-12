@@ -16,6 +16,7 @@ passes through a float, and the savings rate is rounded half-up to one decimal p
 from __future__ import annotations
 
 import datetime as dt
+import re
 from abc import ABC, abstractmethod
 from collections import Counter
 from collections.abc import Iterable
@@ -25,12 +26,14 @@ from itertools import islice
 from typing import Generic, TypeVar
 
 from pft.domain.category import Category, Kind
+from pft.domain.exceptions import InvalidDateError
 from pft.domain.money import Money
 from pft.domain.transaction import Transaction
 from pft.services.filters import any_of, apply_filters, between, by_kind
 from pft.services.ledger import Ledger
 
 TOP_CATEGORY_COUNT = 3
+_MONTH = re.compile(r"(\d{4})-(0[1-9]|1[0-2])")
 _ONE_DECIMAL = Decimal("0.1")
 
 
@@ -103,6 +106,14 @@ class MonthlySummaryData(ReportData):
     @property
     def net_change(self) -> Money:
         return self.totals.net - self.previous.net
+
+
+def parse_month(text: str) -> tuple[int, int]:
+    """Read a month typed as 2026-11 into (2026, 11); anything else is an InvalidDateError."""
+    match = _MONTH.fullmatch(text.strip())
+    if match is None:
+        raise InvalidDateError(f"invalid month {text!r}; use the form 2026-11", field="month")
+    return int(match[1]), int(match[2])
 
 
 def previous_month(year: int, month: int) -> tuple[int, int]:
@@ -190,6 +201,7 @@ __all__ = [
     "PeriodTotals",
     "Report",
     "ReportData",
+    "parse_month",
     "previous_month",
     "savings_rate",
 ]

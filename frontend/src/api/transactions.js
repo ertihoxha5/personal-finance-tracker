@@ -1,4 +1,5 @@
 import { parseMoneyInput } from '../lib/money.js'
+import { request } from './http.js'
 
 // Shared transaction adapter (#17): the one place that maps between the API's transaction
 // DTO and what components use. Components never read `account_id` or work out a sign
@@ -84,4 +85,36 @@ export function toApi({ kind, accountId, amount, date, category, note }) {
     category,
     note: text(note),
   }
+}
+
+// Filters from the Transactions screen -> the query string of GET /api/transactions. The
+// server applies them with the Python filter predicates (#8, #15); this only renames them.
+// Amount bounds are normalised the same way the form validates them ("12,5" -> "12.50").
+export function transactionQuery(filters) {
+  const params = new URLSearchParams()
+  const add = (name, value) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') params.append(name, String(value).trim())
+  }
+  add('account_id', filters.account)
+  add('kind', filters.kind)
+  filters.categories.forEach((category) => add('category', category))
+  add('start', filters.start)
+  add('end', filters.end)
+  add('min_amount', parseMoneyInput(filters.minimum).value)
+  add('max_amount', parseMoneyInput(filters.maximum).value)
+  add('q', filters.note)
+  add('sort', filters.sortKey)
+  add('direction', filters.sortDirection)
+  return params.toString()
+}
+
+// Raw API transactions (CSV_COLUMNS names); pass each through fromApi() to display it.
+export function searchTransactions(filters) {
+  const query = transactionQuery(filters)
+  return request(`/transactions${query ? `?${query}` : ''}`)
+}
+
+// `body` comes from toApi(): kind, account_id, amount, date, category, note.
+export function createTransaction(body) {
+  return request('/transactions', { method: 'POST', body })
 }

@@ -54,6 +54,20 @@ npm run dev                     # http://localhost:5173
 The Vite dev server proxies `/api/*` to `127.0.0.1:8000`, so the frontend and API share one
 origin and no CORS setup is needed.
 
+## Command line
+
+The same data (SQLite) is available from the terminal. Every command has `--help`.
+
+```bash
+python -m pft account add Cash --type cash --opening 100
+python -m pft add expense 12.50 food --account cash
+python -m pft list --kind expense --month 2026-11 --sort amount --desc
+python -m pft balance
+python -m pft report monthly --month 2026-11
+```
+
+Bad input prints one `Error: ...` line and exits with code 1, never a traceback.
+
 ## Database
 
 - Default location: `data/tracker.sqlite3` in the project root. The folder is created

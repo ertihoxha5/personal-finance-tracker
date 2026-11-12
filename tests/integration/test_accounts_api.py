@@ -155,3 +155,80 @@ def test_transfer_cannot_be_edited_alone(tmp_path: Path) -> None:
         assert response.json()["code"] == "invalid_transfer"
     finally:
         app.dependency_overrides.clear()
+
+
+# --- GET /api/transactions (#21): filters and sorting come from pft.services.filters -------
+
+
+def notes(client: TestClient, **params: object) -> list[str]:
+    response = client.get("/api/transactions", params=params)  # type: ignore[arg-type]
+    assert response.status_code == 200, response.text
+    return [t["note"] for t in response.json()]
+
+
+def test_search_with_no_filters_returns_every_transaction_by_date(db_path: Path) -> None:
+    client = make_client(db_path)
+    assert notes(client) == ["Salary", "Groceries", "Rent"]
+    assert notes(client, direction="desc") == ["Rent", "Groceries", "Salary"]
+
+
+def test_search_filters_combine_with_and(db_path: Path) -> None:
+    client = make_client(db_path)
+    assert notes(client, kind="expense") == ["Groceries", "Rent"]
+    assert notes(client, kind="expense", category=["food", "salary"]) == ["Groceries"]
+    assert notes(client, account_id=2) == []
+    assert notes(client, start="2026-11-02", end="2026-11-02") == ["Groceries"]  # inclusive
+    assert notes(client, min_amount="64.50", max_amount="600.00") == [
+        "Groceries",
+        "Rent",
+    ]
+    assert notes(client, q=" GROCER ") == ["Groceries"]
+
+
+def test_search_sorts_by_amount_and_category(db_path: Path) -> None:
+    client = make_client(db_path)
+    assert notes(client, sort="amount", direction="desc") == ["Salary", "Rent", "Groceries"]
+    assert notes(client, sort="category") == ["Groceries", "Rent", "Salary"]
+
+
+@pytest.mark.parametrize(
+    ("params", "code", "field"),
+    [
+        ({"kind": "refund"}, "invalid_choice", "kind"),
+        ({"category": ["nope"]}, "invalid_category", "category"),
+        ({"start": "2026-13-01"}, "invalid_date", "start"),
+        ({"start": "2026-11-05", "end": "2026-11-01"}, "invalid_date", "end"),
+        ({"min_amount": "abc"}, "invalid_amount", "min_amount"),
+        ({"min_amount": "10", "max_amount": "5"}, "invalid_amount", "max_amount"),
+        ({"sort": "colour"}, "invalid_choice", "sort"),
+    ],
+)
+def test_search_rejects_bad_filters_with_the_error_shape(
+    db_path: Path, params: dict[str, object], code: str, field: str
+) -> None:
+    response = make_client(db_path).get("/api/transactions", params=params)  # type: ignore[arg-type]
+    assert response.status_code == 422
+    assert response.json()["code"] == code
+    assert response.json()["field"] == field
+
+
+def test_search_includes_both_sides_of_a_transfer(tmp_path: Path) -> None:
+    path = tmp_path / "t.sqlite3"
+    db.init_db(path, seed=True)
+    conn = db.connect(path)
+    with conn:
+        conn.executemany(
+            "INSERT INTO transactions (account_id, kind, amount_cents, occurred_on, "
+            "transfer_id, direction) VALUES (?, 'transfer', 5000, '2026-11-04', 't-1', ?)",
+            [(1, "out"), (2, "in")],
+        )
+    conn.close()
+    client = make_client(path)
+    try:
+        rows = client.get("/api/transactions", params={"kind": "transfer"}).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert [(r["account_id"], r["direction"], r["transfer_id"]) for r in rows] == [
+        (1, "out", "t-1"),
+        (2, "in", "t-1"),
+    ]

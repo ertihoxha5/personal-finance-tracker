@@ -8,18 +8,36 @@ integer ids. Errors are raised as FinanceError and become {code, message, field}
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+import datetime as dt
+import re
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from pft.api.store import LedgerStore, get_store
 from pft.domain.account import Account
 from pft.domain.category import AccountType, Category, Kind
-from pft.domain.exceptions import InvalidTransferError
+from pft.domain.exceptions import (
+    InvalidAmountError,
+    InvalidChoiceError,
+    InvalidDateError,
+    InvalidTransferError,
+)
 from pft.domain.factory import TransactionFactory
 from pft.domain.money import DEFAULT_CURRENCY, Money
 from pft.domain.transaction import Transaction
+from pft.services.filters import (
+    Predicate,
+    amount_between,
+    apply_filters,
+    between,
+    by_account,
+    by_category,
+    by_kind,
+    sort_transactions,
+    text_contains,
+)
 from pft.services.ledger import Ledger
 
 router = APIRouter(prefix="/api", tags=["accounts"])
@@ -73,6 +91,26 @@ def transaction_dto(transaction: Transaction) -> dict[str, Any]:
     row["transfer_id"] = row["transfer_id"] or None
     row["direction"] = row["direction"] or None
     return row
+
+
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _date_param(text: str, field: str) -> dt.date:
+    if _ISO_DATE.fullmatch(text.strip()):
+        try:
+            return dt.date.fromisoformat(text.strip())
+        except ValueError:
+            pass
+    raise InvalidDateError(f"invalid date {text!r}; use the form 2026-11-17", field=field)
+
+
+def _amount_param(text: str, field: str) -> Money:
+    try:
+        return Money.of(text.strip())
+    except InvalidAmountError as exc:
+        message = f"invalid amount {text!r}; enter a number like 12.50"
+        raise InvalidAmountError(message, field=field) from exc
 
 
 def _transaction(ledger: Ledger, account_id: int, tx_id: int) -> Transaction:
@@ -137,6 +175,65 @@ def list_transactions(account_id: int, store: Store) -> list[dict[str, Any]]:
         found = [t for t in ledger.account(account_id) if isinstance(t, Transaction)]
         newest_first = sorted(found, key=lambda t: (t.date, t.id), reverse=True)
         return [transaction_dto(t) for t in newest_first]
+
+    return store.read(build)
+
+
+@router.get("/transactions")
+def search_transactions(
+    store: Store,
+    account_id: int | None = None,
+    kind: str | None = None,
+    category: Annotated[list[str] | None, Query()] = None,
+    start: str | None = None,
+    end: str | None = None,
+    min_amount: str | None = None,
+    max_amount: str | None = None,
+    q: str | None = None,
+    sort: str = "date",
+    direction: Literal["asc", "desc"] = "asc",
+) -> list[dict[str, Any]]:
+    """Transactions of every account, filtered and sorted with the #8 and #15 services.
+
+    Filters combine with AND; dates and amount bounds are inclusive. Amounts compare by
+    magnitude, as in the filters. Transfers are included, one row per side.
+    """
+    predicates: list[Predicate] = []
+    if account_id is not None:
+        predicates.append(by_account(account_id))
+    if kind:
+        predicates.append(by_kind(Kind.from_text(kind)))
+    if category:
+        predicates.append(by_category(*(Category.from_text(c) for c in category)))
+    if start or end:
+        first = _date_param(start, "start") if start else dt.date.min
+        last = _date_param(end, "end") if end else dt.date.max
+        if first > last:
+            raise InvalidDateError("end date must be on or after start date", field="end")
+        predicates.append(between(first, last))
+    if min_amount or max_amount:
+        low = _amount_param(min_amount, "min_amount") if min_amount else Money.zero()
+        high = _amount_param(max_amount, "max_amount") if max_amount else Money.of("999999999.99")
+        if low > high:
+            raise InvalidAmountError(
+                "maximum amount must be at least the minimum", field="max_amount"
+            )
+        predicates.append(amount_between(low, high))
+    if q and q.strip():
+        predicates.append(text_contains(q))
+
+    def build(ledger: Ledger) -> list[dict[str, Any]]:
+        everything = sorted(
+            (t for t in ledger.all_transactions() if isinstance(t, Transaction)),
+            key=lambda t: t.id,
+        )
+        try:
+            ordered = sort_transactions(
+                apply_filters(everything, *predicates), sort, reverse=direction == "desc"
+            )
+        except ValueError as exc:
+            raise InvalidChoiceError(str(exc), field="sort") from exc
+        return [transaction_dto(t) for t in ordered]
 
     return store.read(build)
 

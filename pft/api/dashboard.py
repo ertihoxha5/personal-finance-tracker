@@ -9,31 +9,21 @@ the report. Problems use the usual ``{code, message, field}`` error shape.
 from __future__ import annotations
 
 import datetime as dt
-import re
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 
 from pft.api.store import LedgerStore, get_store
 from pft.domain.category import Kind
-from pft.domain.exceptions import InvalidDateError
 from pft.domain.transaction import Transaction
 from pft.services.ledger import Ledger
-from pft.services.reports import MonthlySummary, PeriodTotals, previous_month
+from pft.services.reports import MonthlySummary, PeriodTotals, parse_month, previous_month
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 Store = Annotated[LedgerStore, Depends(get_store)]
 
 TREND_MONTHS = 5
 RECENT_COUNT = 8
-_MONTH = re.compile(r"(\d{4})-(0[1-9]|1[0-2])")
-
-
-def parse_month(text: str) -> tuple[int, int]:
-    match = _MONTH.fullmatch(text.strip())
-    if match is None:
-        raise InvalidDateError(f"invalid month {text!r}; use the form 2026-11", field="month")
-    return int(match[1]), int(match[2])
 
 
 def _key(year: int, month: int) -> str:
