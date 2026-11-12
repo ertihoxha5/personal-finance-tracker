@@ -82,3 +82,9 @@ test('unexpected server responses and network failures are rejected', async () =
   }), /Failed to fetch/)
   await assert.rejects(requestCsv({ filename: '../report.csv' }), /filename/)
 })
+
+test('an older running backend gives an actionable endpoint error', async () => {
+  await assert.rejects(requestCsv({ filename: 'report.csv' }, {
+    fetchImpl: async () => new Response(JSON.stringify({ detail: 'Not Found' }), { status: 404 }),
+  }), /Restart the backend/)
+})

@@ -46,6 +46,9 @@ export async function requestCsv(payload, { signal, fetchImpl = globalThis.fetch
     body: JSON.stringify(payload), signal,
   })
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('The CSV export endpoint is unavailable. Restart the backend and try again.')
+    }
     const body = await response.json().catch(() => ({}))
     const message = typeof body.detail === 'string' ? body.detail : 'The CSV could not be downloaded. Check the export settings and try again.'
     throw new Error(message)
