@@ -58,8 +58,14 @@ def test_changes_survive_a_backend_restart(db_path: Path) -> None:
     wallet = created.json()["id"]
     response = client.post(
         "/api/transactions",
-        json={"kind": "expense", "account_id": wallet, "amount": "4,50", "date": "2026-11-10",
-              "category": "food", "note": "Lunch"},
+        json={
+            "kind": "expense",
+            "account_id": wallet,
+            "amount": "4,50",
+            "date": "2026-11-10",
+            "category": "food",
+            "note": "Lunch",
+        },
     )
     assert response.status_code == 201
     assert response.json()["id"] == 4  # the seed has transactions 1..3

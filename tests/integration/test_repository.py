@@ -42,23 +42,47 @@ def sample_ledger() -> Ledger:
     cash = ledger.open_account("Cash", AccountType.CASH, Money.of("-20.00"))
     ledger.add_transaction(
         bank.id,
-        Income(id=1, account_id=bank.id, amount=Money.of("2200.00"), date=dt.date(2026, 11, 1),
-               category=Category.SALARY, note="Salary, November"),
+        Income(
+            id=1,
+            account_id=bank.id,
+            amount=Money.of("2200.00"),
+            date=dt.date(2026, 11, 1),
+            category=Category.SALARY,
+            note="Salary, November",
+        ),
     )
     ledger.add_transaction(
         bank.id,
-        Expense(id=2, account_id=bank.id, amount=Money.of("64.50"), date=dt.date(2026, 11, 2),
-                category=Category.FOOD, note='He said "hi"\nand left'),
+        Expense(
+            id=2,
+            account_id=bank.id,
+            amount=Money.of("64.50"),
+            date=dt.date(2026, 11, 2),
+            category=Category.FOOD,
+            note='He said "hi"\nand left',
+        ),
     )
     ledger.add_transaction(
         bank.id,
-        Transfer(id=3, account_id=bank.id, amount=Money.of("50.00"), date=dt.date(2026, 11, 3),
-                 direction=Direction.OUT, transfer_id="t-1"),
+        Transfer(
+            id=3,
+            account_id=bank.id,
+            amount=Money.of("50.00"),
+            date=dt.date(2026, 11, 3),
+            direction=Direction.OUT,
+            transfer_id="t-1",
+        ),
     )
     ledger.add_transaction(
         cash.id,
-        Transfer(id=4, account_id=cash.id, amount=Money.of("50.00"), date=dt.date(2026, 11, 3),
-                 direction=Direction.IN, transfer_id="t-1"),
+        Transfer(
+            id=4,
+            account_id=cash.id,
+            amount=Money.of("50.00"),
+            date=dt.date(2026, 11, 3),
+            direction=Direction.IN,
+            transfer_id="t-1",
+        ),
     )
     return ledger
 
@@ -112,8 +136,13 @@ def test_amounts_stay_exact(repo: Repository) -> None:
     account = ledger.open_account("A", AccountType.BANK, Money.of("0.10"))
     ledger.add_transaction(
         account.id,
-        Income(id=1, account_id=account.id, amount=Money.of("0.20"), date=dt.date(2026, 1, 1),
-               category=Category.OTHER),
+        Income(
+            id=1,
+            account_id=account.id,
+            amount=Money.of("0.20"),
+            date=dt.date(2026, 1, 1),
+            category=Category.OTHER,
+        ),
     )
     repo.save(ledger)
     assert str(repo.load().net_worth.amount) == "0.30"

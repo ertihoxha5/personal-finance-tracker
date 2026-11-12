@@ -40,16 +40,27 @@ class Book:
         for account, direction in ((self.account, Direction.OUT), (self.other, Direction.IN)):
             self.ledger.add_transaction(
                 account,
-                Transfer(id=self._next, account_id=account, amount=Money.of(amount), date=day,
-                         direction=direction, transfer_id=f"t{self._next}"),
+                Transfer(
+                    id=self._next,
+                    account_id=account,
+                    amount=Money.of(amount),
+                    date=day,
+                    direction=direction,
+                    transfer_id=f"t{self._next}",
+                ),
             )
             self._next += 1
 
     def _add(self, cls: type[Transaction], amount: str, day: dt.date, category: Category) -> None:
         self.ledger.add_transaction(
             self.account,
-            cls(id=self._next, account_id=self.account, amount=Money.of(amount), date=day,
-                category=category),
+            cls(
+                id=self._next,
+                account_id=self.account,
+                amount=Money.of(amount),
+                date=day,
+                category=category,
+            ),
         )
         self._next += 1
 
