@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 import pytest
@@ -179,3 +180,40 @@ def test_observer_can_unsubscribe_itself_while_notified() -> None:
     ledger.add_transaction(bank, tx(2, "1.00"))
     assert one_shot.count == 1
     assert len(other.events) == 2
+
+
+class FailingObserver:
+    def update(self, event: LedgerEvent) -> None:
+        raise RuntimeError("observer bug")
+
+
+def test_failing_observer_does_not_undo_or_hide_the_change(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ledger, bank, _ = make_ledger()
+    before, after = RecordingObserver(), RecordingObserver()
+    ledger.subscribe(before)
+    ledger.subscribe(FailingObserver())
+    ledger.subscribe(after)
+
+    with caplog.at_level(logging.ERROR, logger="pft.services.ledger"):
+        ledger.add_transaction(bank, tx(1, "-5.00"))  # must not raise
+
+    # The mutation stands, and observers on both sides of the failing one were told.
+    assert ledger.account(bank).balance == Money.of("95.00")
+    assert len(before.events) == len(after.events) == 1
+    assert "observer bug" in caplog.text
+
+
+def test_failing_observer_does_not_break_remove_either() -> None:
+    ledger, bank, _ = make_ledger()
+    ledger.add_transaction(bank, tx(1, "-5.00"))
+    after = RecordingObserver()
+    ledger.subscribe(FailingObserver())
+    ledger.subscribe(after)
+
+    removed = ledger.remove_transaction(bank, 1)  # still returns the removed transaction
+
+    assert removed.id == 1
+    assert ledger.account(bank).balance == Money.of("100.00")
+    assert after.events == [TransactionRemoved(bank, removed)]

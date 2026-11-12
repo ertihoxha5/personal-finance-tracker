@@ -9,6 +9,12 @@ import { ACCOUNT_SEED, ACCOUNT_TYPES } from '../fixtures/accounts.js'
 //     input, the name of that field.
 // When the real endpoints exist, replace the bodies with fetch() and keep the signatures.
 //
+// DEFERRED (task #11 review, 12 Nov 2026): balances and net worth here still come from
+// browser-memory fixtures, not FastAPI. The Ledger exists (pft/services/ledger.py) but
+// nothing loads it from SQLite or saves it yet, and the API has no accounts routes.
+// Blocked by #18 (Repository and atomic save) and #14 (Transaction hierarchy); wire
+// GET /api/accounts, GET /api/net-worth and the mutations once those land (#36 integration).
+//
 // Preview other states by adding to the page URL:
 //   ?state=loading | empty | error      (list loading)
 //   ?state=mutation-error               (every create/rename/edit/delete fails)

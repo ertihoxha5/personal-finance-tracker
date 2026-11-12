@@ -3,10 +3,15 @@
 The Ledger owns accounts by composition and tells subscribed observers (such as a
 budget monitor) when a transaction is added or removed, without knowing who they are.
 It never prints and never touches files; persistence and output belong to other layers.
+
+Observer failures: a change is final before observers are told, so an observer that raises
+is logged and skipped. The change stands, the caller sees no error, and later observers
+still get the event.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import chain
@@ -16,6 +21,8 @@ from pft.domain.account import Account, AccountTransaction
 from pft.domain.category import AccountType
 from pft.domain.exceptions import AccountNotFoundError
 from pft.domain.money import Money
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -105,6 +112,15 @@ class Ledger:
             self._observers.remove(observer)
 
     def _notify(self, event: LedgerEvent) -> None:
+        """Tell every observer; one observer failing never affects the others or the caller.
+
+        By the time observers hear about a change it has already happened, so an observer
+        error must not make add_transaction/remove_transaction look as if it failed.
+        The failure is logged with its traceback and the next observer is still notified.
+        """
         # Loop over a copy so an observer can unsubscribe itself while being notified.
         for observer in list(self._observers):
-            observer.update(event)
+            try:
+                observer.update(event)
+            except Exception:
+                logger.exception("observer %r failed on %s", observer, type(event).__name__)
