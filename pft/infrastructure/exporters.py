@@ -42,6 +42,14 @@ def _format_enum(value: Enum) -> str:
     return value.name
 
 
+@format_value.register
+def _format_text(value: str) -> str:
+    """Neutralize spreadsheet formulas in text without altering numeric values."""
+    if isinstance(value, Enum):
+        return value.name
+    return "'" + value if value.startswith(("=", "+", "-", "@")) else value
+
+
 class Exporter(ABC):
     """Common interface for file exporters that register through subclass creation."""
 
@@ -163,7 +171,7 @@ class JsonExporter(Exporter, fmt="json"):
 def _markdown_cell(value: object) -> str:
     """Keep literal text inside one Markdown table cell."""
     return (
-        format_value(value)
+        (value if isinstance(value, str) and not isinstance(value, Enum) else format_value(value))
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")

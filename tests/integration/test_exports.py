@@ -135,3 +135,18 @@ def test_endpoint_removes_temporary_export_after_response(client: TestClient) ->
     assert response.status_code == 200
     assert len(paths) == 1
     assert not paths[0].parent.exists()
+
+
+@pytest.mark.parametrize("text", ["=SUM(A1)", "+SUM(A1)", "-SUM(A1)", "@SUM(A1)"])
+def test_csv_endpoint_neutralizes_formula_text(client: TestClient, text: str) -> None:
+    response = client.post(
+        "/api/exports/csv",
+        json={
+            "filename": "guard.csv",
+            "columns": ["note", "amount"],
+            "rows": [{"note": text, "amount": "12.50"}],
+        },
+    )
+    assert response.status_code == 200
+    reader = csv.DictReader(io.StringIO(response.content.decode("utf-8-sig")))
+    assert list(reader) == [{"note": "'" + text, "amount": "12.50"}]
