@@ -783,3 +783,40 @@ body {
   margin-right: 0.75rem;
   font-weight: 600;
 }
+
+.range-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.range-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.range-field label {
+  font-weight: 600;
+}
+
+.range-field input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+}
+
+.range-field input[aria-invalid='true'] {
+  border-color: #b42318;
+}
+
+.data-table tfoot th,
+.data-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid #9aa5b1;
+  border-bottom: 0;
+}

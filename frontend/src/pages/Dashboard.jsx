@@ -54,11 +54,12 @@ export default function Dashboard() {
           <TopCategories categories={data.topCategories} />
           <div className="dashboard-grid">
             <IncomeExpenseChart trend={data.trend} />
-            <CategoryBreakdown categories={data.categories} />
           </div>
           <RecentTransactions transactions={data.recentTransactions} />
         </>
       )}
+      {/* Outside the status blocks: any date range can be checked, even if this month is empty. */}
+      {month && <CategoryBreakdown month={month} />}
     </section>
   )
 }
