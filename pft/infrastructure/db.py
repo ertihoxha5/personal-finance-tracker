@@ -38,6 +38,21 @@ CREATE TABLE IF NOT EXISTS transactions (
     transfer_id TEXT,
     direction TEXT
 );
+
+-- Recurring rules (#25): a template income/expense plus its schedule. last_run is the date
+-- of the last occurrence already added, so a restart never adds it again.
+CREATE TABLE IF NOT EXISTS recurring (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    kind TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    category TEXT NOT NULL DEFAULT 'other',
+    note TEXT NOT NULL DEFAULT '',
+    frequency TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    last_run TEXT
+);
 """
 
 # Task #5 created accounts without type/currency and transactions with a signed amount and a

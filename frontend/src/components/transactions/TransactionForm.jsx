@@ -1,18 +1,24 @@
 import { useId, useMemo } from 'react'
 import useFormValidation from '../../hooks/useFormValidation.js'
+import { RECURRING_FIELD_TO_FORM, toRecurringApi } from '../../api/recurring.js'
 import { API_TO_FORM_FIELD, toApi } from '../../api/transactions.js'
-import { CATEGORY_LABELS, toOptions } from '../../lib/labels.js'
+import { CATEGORY_LABELS, FREQUENCY_LABELS, toOptions } from '../../lib/labels.js'
 import { isoDate, todayISO } from '../../lib/transactions.js'
 import { positiveDecimal, required } from '../../lib/validation.js'
 import MoneyInput from '../MoneyInput.jsx'
 import PageAlert from '../PageAlert.jsx'
+import RecurrencePreview from './RecurrencePreview.jsx'
 import SelectField from '../SelectField.jsx'
 import TextField from '../TextField.jsx'
 
 // Shared income/expense form (#14): kind, account, amount, date, category and note.
 // Validation, server errors and the double-submit guard come from useFormValidation
 // (#12). onSubmit(dto) receives the request body from toApi (#17) and may throw an API error;
-// the form clears after it resolves. Transfers use their own form (a later task).
+// the form clears after it resolves. Transfers use their own form (#23).
+//
+// With onSubmitRecurring (#25) the form also offers Repeat: weekly, monthly or yearly.
+// The date then becomes the start date, an optional end date appears, and the upcoming
+// dates are previewed from the server. onSubmitRecurring(body) gets toRecurringApi().
 
 const KIND_CHOICES = [
   { value: 'expense', label: 'Expense' },
@@ -20,6 +26,8 @@ const KIND_CHOICES = [
 ]
 
 const CATEGORY_OPTIONS = [{ value: '', label: 'Choose a category…' }, ...toOptions(CATEGORY_LABELS)]
+const REPEAT_OPTIONS = [{ value: '', label: 'Does not repeat' }, ...toOptions(FREQUENCY_LABELS)]
+const FIELD_NAMES = { ...API_TO_FORM_FIELD, ...RECURRING_FIELD_TO_FORM }
 
 const RULES = {
   accountId: (value) => required(value, 'Choose an account.'),
@@ -27,9 +35,17 @@ const RULES = {
   date: isoDate,
   category: (value) => required(value, 'Choose a category.'),
   note: () => null,
+  frequency: () => null,
+  endDate: (value) => (value ? isoDate(value) : null),
 }
 
-export default function TransactionForm({ accounts, onSubmit, defaultAccountId = '', title = 'New transaction' }) {
+export default function TransactionForm({
+  accounts,
+  onSubmit,
+  onSubmitRecurring = null,
+  defaultAccountId = '',
+  title = 'New transaction',
+}) {
   const uid = useId()
   const initialValues = useMemo(
     () => ({
@@ -39,6 +55,8 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
       date: todayISO(),
       category: '',
       note: '',
+      frequency: '',
+      endDate: '',
     }),
     [defaultAccountId],
   )
@@ -48,7 +66,8 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
     rules: RULES,
     onSubmit: async (values) => {
       try {
-        await onSubmit(toApi(values))
+        if (values.frequency && onSubmitRecurring) await onSubmitRecurring(toRecurringApi(values))
+        else await onSubmit(toApi(values))
       } catch (error) {
         throw renameFields(error)
       }
@@ -61,6 +80,7 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
     ...accounts.map((account) => ({ value: String(account.id), label: account.name })),
   ]
   const { values, errors, setValue } = form
+  const repeats = Boolean(onSubmitRecurring && values.frequency)
 
   return (
     <form ref={form.formRef} className="card transaction-form" noValidate onSubmit={form.handleSubmit}>
@@ -101,7 +121,7 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
           error={errors.amount ?? null}
         />
         <div className="field">
-          <label htmlFor={`${uid}-date`}>Date</label>
+          <label htmlFor={`${uid}-date`}>{repeats ? 'Start date' : 'Date'}</label>
           <input
             id={`${uid}-date`}
             name="date"
@@ -125,6 +145,36 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
           onChange={(value) => setValue('category', value)}
           error={errors.category ?? null}
         />
+        {onSubmitRecurring && (
+          <SelectField
+            label="Repeat"
+            name="frequency"
+            value={values.frequency}
+            options={REPEAT_OPTIONS}
+            onChange={(value) => setValue('frequency', value)}
+            error={errors.frequency ?? null}
+          />
+        )}
+        {repeats && (
+          <div className="field">
+            <label htmlFor={`${uid}-end`}>End date (optional)</label>
+            <input
+              id={`${uid}-end`}
+              name="endDate"
+              type="date"
+              value={values.endDate}
+              min={values.date || undefined}
+              onChange={(event) => setValue('endDate', event.target.value)}
+              aria-invalid={Boolean(errors.endDate)}
+              aria-describedby={errors.endDate ? `${uid}-end-error` : undefined}
+            />
+            {errors.endDate && (
+              <p id={`${uid}-end-error`} className="field-error">
+                {errors.endDate}
+              </p>
+            )}
+          </div>
+        )}
         <TextField
           label="Note (optional)"
           name="note"
@@ -135,21 +185,23 @@ export default function TransactionForm({ accounts, onSubmit, defaultAccountId =
         />
       </div>
 
+      {repeats && <RecurrencePreview frequency={values.frequency} startDate={values.date} endDate={values.endDate} />}
+
       <div className="button-row button-row-start">
         <button type="submit" className="button" disabled={form.submitting} aria-busy={form.submitting}>
-          {form.submitting ? 'Saving…' : `Add ${values.kind}`}
+          {form.submitting ? 'Saving…' : repeats ? `Save ${values.frequency} ${values.kind}` : `Add ${values.kind}`}
         </button>
       </div>
     </form>
   )
 }
 
-// Server errors use the API field names; map them onto this form's fields.
+// Server errors use the API field names; map them onto this form's fields (FIELD_NAMES).
 function renameFields(error) {
   // A plain object, not a spread: an Error's message is not an enumerable property.
   const rename = (item) =>
-    item && typeof item === 'object' && Object.hasOwn(API_TO_FORM_FIELD, item.field ?? '')
-      ? { code: item.code, message: item.message, field: API_TO_FORM_FIELD[item.field], status: item.status }
+    item && typeof item === 'object' && Object.hasOwn(FIELD_NAMES, item.field ?? '')
+      ? { code: item.code, message: item.message, field: FIELD_NAMES[item.field], status: item.status }
       : item
   if (Array.isArray(error)) return error.map(rename)
   if (error && typeof error === 'object' && Array.isArray(error.errors)) return { ...error, errors: error.errors.map(rename) }

@@ -23,7 +23,8 @@ from pft.domain.account import Account, AccountTransaction
 from pft.domain.category import AccountType, Direction
 from pft.domain.exceptions import AccountNotFoundError, DataImportError, InvalidTransferError
 from pft.domain.money import Money
-from pft.domain.transaction import Transfer
+from pft.domain.recurring import RecurringTransaction
+from pft.domain.transaction import Transaction, Transfer
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class Ledger:
     def __init__(self) -> None:
         self._accounts: dict[int, Account] = {}
         self._observers: list[Observer] = []
+        self._recurring: list[RecurringTransaction] = []
         self._next_account_id = 1
 
     # --- accounts -----------------------------------------------------------
@@ -78,6 +80,8 @@ class Ledger:
         """Remove and return the account. Observers are not told; only transactions notify."""
         account = self.account(account_id)
         del self._accounts[account_id]
+        # Its recurring rules would point at a missing account, so they go too (#25).
+        self._recurring = [r for r in self._recurring if r.template.account_id != account_id]
         return account
 
     def account(self, account_id: int) -> Account:
@@ -167,6 +171,25 @@ class Ledger:
         self._notify(TransactionAdded(src, out_side))
         self._notify(TransactionAdded(dst, in_side))
         return out_side, in_side
+
+    # --- recurring rules (#25) ---------------------------------------------------------
+
+    @property
+    def recurring(self) -> list[RecurringTransaction]:
+        """A copy of the recurring rules, in the order they were added."""
+        return list(self._recurring)
+
+    def add_recurring(self, rule: RecurringTransaction) -> None:
+        """Keep a rule; its account must exist. Nothing is applied until apply_recurring."""
+        self.account(rule.template.account_id)
+        self._recurring.append(rule)
+
+    def apply_recurring(self, today: dt.date) -> list[Transaction]:
+        """Add every missing occurrence due by today, for every rule; returns what was added."""
+        added: list[Transaction] = []
+        for rule in self._recurring:
+            added.extend(rule.apply_due(self, today))
+        return added
 
     def all_transactions(self) -> Iterator[AccountTransaction]:
         """Every transaction of every account, one after another, without building a list."""

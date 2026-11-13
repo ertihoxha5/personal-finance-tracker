@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { listAccounts } from '../api/accounts.js'
 import { transactionExport } from '../api/exports.js'
+import { createRecurring, listRecurring } from '../api/recurring.js'
 import { createTransaction, fromApi, searchTransactions, transactionQuery } from '../api/transactions.js'
 import CsvDownload from '../components/CsvDownload.jsx'
 import SaveStatus from '../components/SaveStatus.jsx'
+import RecurringRules from '../components/transactions/RecurringRules.jsx'
 import TransactionForm from '../components/transactions/TransactionForm.jsx'
 import TransactionRows from '../components/transactions/TransactionRows.jsx'
 import { useDebounced } from '../hooks/useDebounced.js'
@@ -22,6 +24,7 @@ export default function Transactions() {
   const invalid = Object.keys(errors).length > 0
 
   const accounts = useLoad(listAccounts, 'accounts')
+  const recurring = useLoad(listRecurring, 'recurring')
   // Wait for typing to pause, so the note search sends one request, not one per key.
   const query = useDebounced(transactionQuery(filters))
   const results = useLoad(
@@ -66,6 +69,21 @@ export default function Transactions() {
     }
     setSave({ state: 'saved' })
     results.reload()
+  }
+
+  // A recurring rule (#25): the server saves it and adds the items already due, so the list
+  // and the rules both reload. Reloading never adds an item twice.
+  async function handleCreateRecurring(body) {
+    setSave({ state: 'saving' })
+    try {
+      await createRecurring(body)
+    } catch (error) {
+      setSave({ state: 'failed', message: error.message })
+      throw error
+    }
+    setSave({ state: 'saved' })
+    results.reload()
+    recurring.reload()
   }
 
   function field(key, label, type = 'text', placeholder) {
@@ -138,8 +156,10 @@ export default function Transactions() {
           <p>Add an account on the Accounts page before adding transactions.</p>
         </div>
       ) : accounts.data ? (
-        <TransactionForm accounts={accounts.data} onSubmit={handleCreate} />
+        <TransactionForm accounts={accounts.data} onSubmit={handleCreate} onSubmitRecurring={handleCreateRecurring} />
       ) : null}
+
+      <RecurringRules rules={recurring.data} accountName={accountName} />
 
       <form className="card" aria-labelledby="filters-title" onSubmit={(event) => event.preventDefault()}>
         <div className="page-header">

@@ -691,6 +691,34 @@ body {
   margin-top: 0;
 }
 
+/* #25 recurring transactions */
+.recurrence-preview {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid #9aa5b1;
+  background: #f5f7fa;
+}
+
+.recurrence-preview h4 {
+  margin: 0 0 0.5rem;
+}
+
+.recurrence-preview p {
+  margin: 0.25rem 0;
+}
+
+.upcoming-dates {
+  margin: 0.25rem 0 0;
+  padding-left: 1.5rem;
+}
+
+.recurring-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
 .demo-form {
   margin-top: 1rem;
 }

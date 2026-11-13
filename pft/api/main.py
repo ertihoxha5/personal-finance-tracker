@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pft.api.accounts import router as accounts_router
 from pft.api.dashboard import router as dashboard_router
 from pft.api.exports import router as exports_router
+from pft.api.recurring import router as recurring_router
 from pft.domain.exceptions import (
     AccountNotFoundError,
     DuplicateTransactionError,
@@ -24,6 +25,7 @@ app = FastAPI(title="Personal Finance Tracker")
 app.include_router(exports_router)
 app.include_router(accounts_router)
 app.include_router(dashboard_router)
+app.include_router(recurring_router)
 
 
 def _status_for(error: FinanceError) -> int:

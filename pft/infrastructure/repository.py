@@ -13,8 +13,9 @@ and replaces the old file only when writing finished, so a crash leaves the old 
 CSV spreads one save over several files, so each file is atomic on its own; SQLite is the
 store the API uses because a single transaction covers everything.
 
-Budgets and recurring rules do not exist yet (#25, #27). Their files are created with only a
-header and are never overwritten, so data written by those tasks later is not lost.
+Recurring rules (#25) are saved with the ledger: recurring.csv, a "recurring" list in JSON,
+and a recurring table in SQLite (same database transaction as everything else). Budgets do
+not exist yet (#27); budgets.csv is created with only a header and never overwritten.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from pft.domain.category import AccountType
 from pft.domain.exceptions import DataImportError, FinanceError, StorageError
 from pft.domain.factory import TransactionFactory
 from pft.domain.money import Money
+from pft.domain.recurring import RecurringTransaction
 from pft.domain.transaction import CSV_COLUMNS, Transaction
 from pft.infrastructure import db
 from pft.services.ledger import Ledger
@@ -112,6 +114,10 @@ def _transaction_rows(ledger: Ledger) -> list[dict[str, str]]:
     return [t.to_row() for t in _sorted_transactions(ledger)]
 
 
+def _recurring_rows(ledger: Ledger) -> list[dict[str, str]]:
+    return [r.to_row() for r in ledger.recurring]
+
+
 def _account_from_row(row: Mapping[str, Any]) -> Account:
     try:
         return Account(
@@ -133,6 +139,7 @@ def _build_ledger(
     account_rows: Sequence[Mapping[str, Any]],
     transaction_rows: Sequence[Mapping[str, Any]],
     source: str,
+    recurring_rows: Sequence[Mapping[str, Any]] = (),
 ) -> Ledger:
     """Rebuild a Ledger from stored rows; a bad row is reported with its position."""
     ledger = Ledger()
@@ -151,6 +158,14 @@ def _build_ledger(
             raise DataImportError(
                 f"{source}, transaction {number}: {exc.message}", field=exc.field
             ) from exc
+    for number, row in enumerate(recurring_rows, start=1):
+        try:
+            text = {k: "" if v is None else str(v) for k, v in row.items()}
+            ledger.add_recurring(RecurringTransaction.from_row(text))
+        except FinanceError as exc:
+            raise DataImportError(
+                f"{source}, recurring rule {number}: {exc.message}", field=exc.field
+            ) from exc
     return ledger
 
 
@@ -166,18 +181,16 @@ class CsvRepository(Repository):
     def load(self) -> Ledger:
         accounts = self._read("accounts.csv", ACCOUNT_COLUMNS)
         transactions = self._read("transactions.csv", CSV_COLUMNS)
-        return _build_ledger(list(accounts), list(transactions), str(self.folder))
+        recurring = self._read("recurring.csv", RECURRING_COLUMNS)
+        return _build_ledger(list(accounts), list(transactions), str(self.folder), recurring)
 
     def save(self, ledger: Ledger) -> None:
         try:
             self._write("accounts.csv", ACCOUNT_COLUMNS, _account_rows(ledger))
             self._write("transactions.csv", CSV_COLUMNS, _transaction_rows(ledger))
-            for name, columns in (
-                ("budgets.csv", BUDGET_COLUMNS),
-                ("recurring.csv", RECURRING_COLUMNS),
-            ):
-                if not (self.folder / name).exists():  # never overwrite another task's data
-                    self._write(name, columns, [])
+            self._write("recurring.csv", RECURRING_COLUMNS, _recurring_rows(ledger))
+            if not (self.folder / "budgets.csv").exists():  # never overwrite #27's data
+                self._write("budgets.csv", BUDGET_COLUMNS, [])
         except OSError as exc:
             raise StorageError(f"could not save to {self.folder}: {exc}") from exc
 
@@ -219,10 +232,11 @@ class JsonRepository(Repository):
             list(document.get("accounts", [])),
             list(document.get("transactions", [])),
             str(self.path),
+            list(document.get("recurring", [])),
         )
 
     def save(self, ledger: Ledger) -> None:
-        # Budgets and recurring rules belong to later tasks; carry over whatever is stored.
+        # Budgets belong to a later task (#27); carry over whatever is stored.
         try:
             previous = self._read()
         except DataImportError:
@@ -232,7 +246,7 @@ class JsonRepository(Repository):
             "accounts": _account_rows(ledger),
             "transactions": _transaction_rows(ledger),
             "budgets": previous.get("budgets", []),
-            "recurring": previous.get("recurring", []),
+            "recurring": _recurring_rows(ledger),
         }
         try:
             with atomic_write(self.path) as f:
@@ -316,11 +330,25 @@ class SqliteRepository(Repository):
                     }
                     for r in conn.execute("SELECT * FROM transactions ORDER BY id")
                 ]
+                recurring = [
+                    {
+                        "account_id": r["account_id"],
+                        "kind": r["kind"],
+                        "amount": _from_cents(r["amount_cents"]),
+                        "category": r["category"],
+                        "note": r["note"],
+                        "frequency": r["frequency"],
+                        "start_date": r["start_date"],
+                        "end_date": r["end_date"] or "",
+                        "last_run": r["last_run"] or "",
+                    }
+                    for r in conn.execute("SELECT * FROM recurring ORDER BY id")
+                ]
             finally:
                 conn.close()
         except sqlite3.Error as exc:
             raise StorageError(f"could not read {path}: {exc}") from exc
-        return _build_ledger(accounts, transactions, str(path))
+        return _build_ledger(accounts, transactions, str(path), recurring)
 
     def save(self, ledger: Ledger) -> None:
         path = self._path()
@@ -345,11 +373,26 @@ class SqliteRepository(Repository):
                     row["direction"] or None,
                 )
             )
+        recurring_params = [
+            (
+                r.template.account_id,
+                r.template.kind.value,
+                _to_cents(r.template.amount),
+                r.template.category.value,
+                r.template.note,
+                r.frequency.value,
+                r.start.isoformat(),
+                r.end.isoformat() if r.end else None,
+                r.last_run.isoformat() if r.last_run else None,
+            )
+            for r in ledger.recurring
+        ]
         try:
             db.init_db(path)
             conn = db.connect(path)
             try:
                 with conn:  # one transaction: commit on success, roll back on any error
+                    conn.execute("DELETE FROM recurring")
                     conn.execute("DELETE FROM transactions")
                     conn.execute("DELETE FROM accounts")
                     conn.executemany(
@@ -362,6 +405,12 @@ class SqliteRepository(Repository):
                         "occurred_on, category, note, transfer_id, direction) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         transaction_params,
+                    )
+                    conn.executemany(
+                        "INSERT INTO recurring (account_id, kind, amount_cents, category, note, "
+                        "frequency, start_date, end_date, last_run) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        recurring_params,
                     )
             finally:
                 conn.close()
