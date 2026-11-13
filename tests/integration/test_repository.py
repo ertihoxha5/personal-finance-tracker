@@ -224,11 +224,17 @@ def test_failed_save_keeps_the_previously_saved_data(
     assert snapshot(repo.load()) == snapshot(original)
 
 
-def test_csv_creates_all_four_files_and_keeps_later_budget_data(tmp_path: Path) -> None:
+def test_csv_creates_all_its_files_and_keeps_later_budget_data(tmp_path: Path) -> None:
     repo = CsvRepository(tmp_path / "data")
     repo.save(sample_ledger())
     names = {p.name for p in (tmp_path / "data").iterdir()}
-    assert names == {"accounts.csv", "transactions.csv", "budgets.csv", "recurring.csv"}
+    assert names == {
+        "accounts.csv",
+        "transactions.csv",
+        "budgets.csv",
+        "recurring.csv",
+        "counters.csv",
+    }
     budgets = tmp_path / "data" / "budgets.csv"
     budgets.write_text("category,month,limit,currency\nfood,2026-11,300.00,EUR\n")
     repo.save(sample_ledger())
@@ -332,3 +338,136 @@ def test_seeded_demo_database_loads_into_a_ledger(tmp_path: Path) -> None:
     ledger = SqliteRepository(path).load()
     assert {a.name for a in ledger.accounts} == {"Checking", "Savings"}
     assert ledger.net_worth == Money.of("8035.50")  # 1500 + 5000 + 2200 - 64.50 - 600
+
+
+# --- IDs are never reused (Erti's review of #18) --------------------------------------------
+
+
+def expense(tx_id: int, account_id: int) -> Expense:
+    return Expense(
+        id=tx_id,
+        account_id=account_id,
+        amount=Money.of("5.00"),
+        date=dt.date(2026, 11, 5),
+        category=Category.FOOD,
+    )
+
+
+def test_deleted_account_id_is_not_reused_after_reload(repo: Repository) -> None:
+    ledger = sample_ledger()  # accounts 1 and 2
+    ledger.close_account(2)  # the newest account goes away
+    repo.save(ledger)
+    loaded = repo.load()
+    assert loaded.open_account("New", AccountType.CARD, Money.zero()).id == 3
+
+
+def test_deleted_transaction_id_is_not_reused_after_reload(repo: Repository) -> None:
+    ledger = sample_ledger()
+    new_id = ledger.next_transaction_id()
+    ledger.add_transaction(1, expense(new_id, 1))
+    ledger.remove_transaction(1, new_id)  # the newest transaction goes away
+    repo.save(ledger)
+    loaded = repo.load()
+    assert loaded.next_transaction_id() == new_id + 1
+
+
+def test_transaction_ids_of_a_deleted_account_are_not_reused_after_reload(
+    repo: Repository,
+) -> None:
+    ledger = sample_ledger()
+    new_id = ledger.next_transaction_id()
+    ledger.add_transaction(2, expense(new_id, 2))
+    ledger.close_account(2)  # takes its transactions with it
+    repo.save(ledger)
+    assert repo.load().next_transaction_id() == new_id + 1
+
+
+def test_id_counters_survive_two_saves_in_a_row(repo: Repository) -> None:
+    ledger = sample_ledger()
+    ledger.close_account(2)
+    repo.save(ledger)
+    again = repo.load()  # the counter is loaded, then saved again unchanged
+    repo.save(again)
+    assert repo.load().next_account_id == 3
+
+
+# --- CSV saves are all or nothing ---------------------------------------------------------
+
+
+def csv_files(folder: Path) -> dict[str, str]:
+    return {p.name: p.read_text(encoding="utf-8") for p in sorted(folder.iterdir())}
+
+
+def changed_ledger() -> Ledger:
+    ledger = sample_ledger()
+    ledger.close_account(2)
+    ledger.open_account("Brand new", AccountType.SAVINGS, Money.of("1.00"))
+    return ledger
+
+
+def test_csv_failure_while_writing_the_second_file_keeps_the_whole_old_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = CsvRepository(tmp_path / "data")
+    original = sample_ledger()
+    repo.save(original)
+    before = csv_files(tmp_path / "data")
+
+    real_write = CsvRepository._write
+    calls: list[Path] = []
+
+    def fail_on_second(self: CsvRepository, path: Path, *args: object) -> None:
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError("disk full")
+        real_write(self, path, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(CsvRepository, "_write", fail_on_second)
+    with pytest.raises(StorageError):
+        repo.save(changed_ledger())
+    monkeypatch.undo()
+
+    assert len(calls) == 2  # accounts.csv was written, transactions.csv failed
+    assert csv_files(tmp_path / "data") == before  # no mixed files, no leftovers
+    assert snapshot(repo.load()) == snapshot(original)
+
+
+def test_csv_failure_while_swapping_the_second_file_puts_the_old_snapshot_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = CsvRepository(tmp_path / "data")
+    original = sample_ledger()
+    repo.save(original)
+    before = csv_files(tmp_path / "data")
+
+    real_replace = os.replace
+    new_into_place = 0
+
+    def fail_second_move_in(src: str | Path, dst: str | Path) -> None:
+        nonlocal new_into_place
+        if str(src).endswith(".tmp"):
+            new_into_place += 1
+            if new_into_place == 2:
+                raise OSError("disk full")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fail_second_move_in)
+    with pytest.raises(StorageError):
+        repo.save(changed_ledger())
+    monkeypatch.undo()
+
+    assert new_into_place == 2  # accounts.csv was already replaced when transactions.csv failed
+    assert csv_files(tmp_path / "data") == before
+    assert snapshot(repo.load()) == snapshot(original)
+
+
+def test_csv_load_restores_the_snapshot_after_a_crash_during_the_swap(tmp_path: Path) -> None:
+    repo = CsvRepository(tmp_path / "data")
+    original = sample_ledger()
+    repo.save(original)
+    folder = tmp_path / "data"
+    # What a crash leaves behind: new accounts.csv in place, the old one parked as .bak.
+    (folder / "accounts.csv").replace(folder / "accounts.csv.bak")
+    (folder / "accounts.csv").write_text("id,name,type,opening_balance,currency\n")
+    assert snapshot(repo.load()) == snapshot(original)
+    assert not list(folder.glob("*.bak"))

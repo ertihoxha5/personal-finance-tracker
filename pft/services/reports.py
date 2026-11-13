@@ -39,6 +39,10 @@ from pft.services.ledger import Ledger
 TOP_CATEGORY_COUNT = 3
 _MONTH = re.compile(r"(\d{4})-(0[1-9]|1[0-2])")
 _ONE_DECIMAL = Decimal("0.1")
+# The months a report accepts. Reports also look at the month before and the one after, and
+# the dashboard five months back; a year near 0001 or 9999 would make those dates impossible.
+MIN_YEAR = 1900
+MAX_YEAR = 9998
 _TENTHS_IN_WHOLE = 1000  # 100.0 percent, counted in steps of 0.1
 
 
@@ -118,7 +122,14 @@ def parse_month(text: str) -> tuple[int, int]:
     match = _MONTH.fullmatch(text.strip())
     if match is None:
         raise InvalidDateError(f"invalid month {text!r}; use the form 2026-11", field="month")
-    return int(match[1]), int(match[2])
+    year, month = int(match[1]), int(match[2])
+    _check_year(year, "month")
+    return year, month
+
+
+def _check_year(year: int, field: str) -> None:
+    if not MIN_YEAR <= year <= MAX_YEAR:
+        raise InvalidDateError(f"year must be {MIN_YEAR} to {MAX_YEAR}, got {year}", field=field)
 
 
 def previous_month(year: int, month: int) -> tuple[int, int]:
@@ -139,6 +150,7 @@ class MonthlySummary(Report[MonthlySummaryData]):
     def __init__(self, ledger: Ledger, year: int, month: int) -> None:
         if not 1 <= month <= 12:
             raise ValueError(f"month must be 1 to 12, got {month}")
+        _check_year(year, "month")
         self._ledger = ledger
         self.year = year
         self.month = month

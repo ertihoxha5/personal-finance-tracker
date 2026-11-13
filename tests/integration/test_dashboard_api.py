@@ -85,7 +85,10 @@ def test_empty_database_gives_an_empty_dashboard(tmp_path: Path) -> None:
     assert body["recent_transactions"] == []
 
 
-@pytest.mark.parametrize("month", ["2026-13", "2026-1", "november", "2026-11-01", ""])
+@pytest.mark.parametrize(
+    "month",
+    ["2026-13", "2026-1", "november", "2026-11-01", "", "0000-01", "0001-01", "1899-12", "9999-12"],
+)
 def test_bad_month_uses_the_error_shape(client: TestClient, month: str) -> None:
     response = client.get("/api/dashboard", params={"month": month})
     assert response.status_code == 422

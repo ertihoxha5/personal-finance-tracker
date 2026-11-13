@@ -10,8 +10,13 @@ one JSON file or SQLite. Three implementations follow:
 
 File repositories write through ``atomic_write``: the new content goes to a temporary file
 and replaces the old file only when writing finished, so a crash leaves the old file intact.
-CSV spreads one save over several files, so each file is atomic on its own; SQLite is the
-store the API uses because a single transaction covers everything.
+CSV spreads one save over several files, so ``CsvRepository`` writes every new file first and
+swaps them in together; if any step fails, the complete previous snapshot is put back.
+SQLite is the store the API uses because a single transaction covers everything.
+
+The next account and transaction ID are stored with the data (counters.csv, a "counters" JSON
+object, an id_counters table), so an ID that belonged to a deleted account or transaction is
+never used again, even after a reload.
 
 Recurring rules (#25) are saved with the ledger: recurring.csv, a "recurring" list in JSON,
 and a recurring table in SQLite (same database transaction as everything else). Budgets do
@@ -54,6 +59,9 @@ RECURRING_COLUMNS: tuple[str, ...] = (
     "end_date",
     "last_run",
 )
+COUNTER_COLUMNS: tuple[str, ...] = ("name", "value")
+ACCOUNT_COUNTER = "next_account_id"
+TRANSACTION_COUNTER = "next_transaction_id"
 JSON_VERSION = 1
 
 
@@ -118,6 +126,13 @@ def _recurring_rows(ledger: Ledger) -> list[dict[str, str]]:
     return [r.to_row() for r in ledger.recurring]
 
 
+def _counters(ledger: Ledger) -> dict[str, int]:
+    return {
+        ACCOUNT_COUNTER: ledger.next_account_id,
+        TRANSACTION_COUNTER: ledger.highest_transaction_id + 1,
+    }
+
+
 def _account_from_row(row: Mapping[str, Any]) -> Account:
     try:
         return Account(
@@ -140,6 +155,7 @@ def _build_ledger(
     transaction_rows: Sequence[Mapping[str, Any]],
     source: str,
     recurring_rows: Sequence[Mapping[str, Any]] = (),
+    counters: Mapping[str, Any] | None = None,
 ) -> Ledger:
     """Rebuild a Ledger from stored rows; a bad row is reported with its position."""
     ledger = Ledger()
@@ -166,6 +182,13 @@ def _build_ledger(
             raise DataImportError(
                 f"{source}, recurring rule {number}: {exc.message}", field=exc.field
             ) from exc
+    if counters:
+        try:
+            ledger.restore_id_counters(
+                int(counters.get(ACCOUNT_COUNTER, 1)), int(counters.get(TRANSACTION_COUNTER, 1))
+            )
+        except (TypeError, ValueError) as exc:
+            raise DataImportError(f"{source}: bad ID counter: {exc!r}") from exc
     return ledger
 
 
@@ -173,26 +196,83 @@ def _build_ledger(
 
 
 class CsvRepository(Repository):
-    """Four CSV files in one folder (Appendix B). A missing folder or file means no data."""
+    """CSV files in one folder (Appendix B). A missing folder or file means no data.
+
+    A save writes every file to ``<name>.tmp`` first. Only when all of them are complete are
+    the old files moved to ``<name>.bak`` and the new ones moved into place. If anything fails
+    the ``.bak`` files are moved back, so the folder always holds one complete snapshot, never
+    a mix of old and new files. If the program dies during the swap itself, the next load or
+    save finds the ``.bak`` files and restores that snapshot.
+    """
 
     def __init__(self, folder: Path) -> None:
         self.folder = folder
 
     def load(self) -> Ledger:
+        self._recover()
         accounts = self._read("accounts.csv", ACCOUNT_COLUMNS)
         transactions = self._read("transactions.csv", CSV_COLUMNS)
         recurring = self._read("recurring.csv", RECURRING_COLUMNS)
-        return _build_ledger(list(accounts), list(transactions), str(self.folder), recurring)
+        counters = {r["name"]: r["value"] for r in self._read("counters.csv", COUNTER_COLUMNS)}
+        return _build_ledger(
+            list(accounts), list(transactions), str(self.folder), recurring, counters
+        )
 
     def save(self, ledger: Ledger) -> None:
+        files: dict[str, tuple[tuple[str, ...], list[dict[str, str]]]] = {
+            "accounts.csv": (ACCOUNT_COLUMNS, _account_rows(ledger)),
+            "transactions.csv": (CSV_COLUMNS, _transaction_rows(ledger)),
+            "recurring.csv": (RECURRING_COLUMNS, _recurring_rows(ledger)),
+            "counters.csv": (
+                COUNTER_COLUMNS,
+                [{"name": k, "value": str(v)} for k, v in _counters(ledger).items()],
+            ),
+        }
         try:
-            self._write("accounts.csv", ACCOUNT_COLUMNS, _account_rows(ledger))
-            self._write("transactions.csv", CSV_COLUMNS, _transaction_rows(ledger))
-            self._write("recurring.csv", RECURRING_COLUMNS, _recurring_rows(ledger))
+            self._recover()
             if not (self.folder / "budgets.csv").exists():  # never overwrite #27's data
-                self._write("budgets.csv", BUDGET_COLUMNS, [])
+                files["budgets.csv"] = (BUDGET_COLUMNS, [])
+            self._swap_in(files)
         except OSError as exc:
             raise StorageError(f"could not save to {self.folder}: {exc}") from exc
+
+    def _swap_in(self, files: dict[str, tuple[tuple[str, ...], list[dict[str, str]]]]) -> None:
+        self.folder.mkdir(parents=True, exist_ok=True)
+        staged: list[Path] = []
+        backed_up: list[str] = []
+        replaced: list[str] = []
+        try:
+            for name, (columns, rows) in files.items():  # step 1: write everything new
+                tmp = self.folder / f"{name}.tmp"
+                staged.append(tmp)
+                self._write(tmp, columns, rows)
+            for name in files:  # step 2: keep the old snapshot
+                if (self.folder / name).exists():
+                    os.replace(self.folder / name, self.folder / f"{name}.bak")
+                    backed_up.append(name)
+            for name in files:  # step 3: put the new snapshot in place
+                os.replace(self.folder / f"{name}.tmp", self.folder / name)
+                replaced.append(name)
+        except BaseException:
+            for name in replaced:  # remove what was already moved in, then restore the old files
+                (self.folder / name).unlink(missing_ok=True)
+            for name in backed_up:
+                os.replace(self.folder / f"{name}.bak", self.folder / name)
+            raise
+        finally:
+            for tmp in staged:
+                tmp.unlink(missing_ok=True)
+        for name in backed_up:  # success: the old snapshot is no longer needed
+            (self.folder / f"{name}.bak").unlink(missing_ok=True)
+
+    def _recover(self) -> None:
+        """Finish an interrupted swap by restoring the snapshot kept in the .bak files."""
+        if not self.folder.exists():
+            return
+        for bak in sorted(self.folder.glob("*.csv.bak")):
+            os.replace(bak, bak.with_suffix(""))
+        for tmp in self.folder.glob("*.csv.tmp"):
+            tmp.unlink(missing_ok=True)
 
     def _read(self, name: str, columns: tuple[str, ...]) -> list[dict[str, str]]:
         path = self.folder / name
@@ -210,11 +290,13 @@ class CsvRepository(Repository):
         except OSError as exc:
             raise StorageError(f"could not read {path}: {exc}") from exc
 
-    def _write(self, name: str, columns: tuple[str, ...], rows: list[dict[str, str]]) -> None:
-        with atomic_write(self.folder / name) as f:
+    def _write(self, path: Path, columns: tuple[str, ...], rows: list[dict[str, str]]) -> None:
+        with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns, lineterminator="\n")
             writer.writeheader()
             writer.writerows(rows)
+            f.flush()
+            os.fsync(f.fileno())  # data is on disk before the old file is replaced
 
 
 # --- JSON ---------------------------------------------------------------------------------
@@ -233,6 +315,7 @@ class JsonRepository(Repository):
             list(document.get("transactions", [])),
             str(self.path),
             list(document.get("recurring", [])),
+            document["counters"] if isinstance(document.get("counters"), dict) else None,
         )
 
     def save(self, ledger: Ledger) -> None:
@@ -247,6 +330,7 @@ class JsonRepository(Repository):
             "transactions": _transaction_rows(ledger),
             "budgets": previous.get("budgets", []),
             "recurring": _recurring_rows(ledger),
+            "counters": _counters(ledger),
         }
         try:
             with atomic_write(self.path) as f:
@@ -344,11 +428,14 @@ class SqliteRepository(Repository):
                     }
                     for r in conn.execute("SELECT * FROM recurring ORDER BY id")
                 ]
+                counters = {
+                    r["name"]: r["value"] for r in conn.execute("SELECT * FROM id_counters")
+                }
             finally:
                 conn.close()
         except sqlite3.Error as exc:
             raise StorageError(f"could not read {path}: {exc}") from exc
-        return _build_ledger(accounts, transactions, str(path), recurring)
+        return _build_ledger(accounts, transactions, str(path), recurring, counters)
 
     def save(self, ledger: Ledger) -> None:
         path = self._path()
@@ -395,6 +482,11 @@ class SqliteRepository(Repository):
                     conn.execute("DELETE FROM recurring")
                     conn.execute("DELETE FROM transactions")
                     conn.execute("DELETE FROM accounts")
+                    conn.execute("DELETE FROM id_counters")
+                    conn.executemany(
+                        "INSERT INTO id_counters (name, value) VALUES (?, ?)",
+                        list(_counters(ledger).items()),
+                    )
                     conn.executemany(
                         "INSERT INTO accounts (id, name, type, opening_balance_cents, currency) "
                         "VALUES (?, ?, ?, ?, ?)",

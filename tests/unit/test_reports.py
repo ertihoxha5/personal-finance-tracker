@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from pft.domain.category import AccountType, Category, Direction
+from pft.domain.exceptions import InvalidDateError
 from pft.domain.money import Money
 from pft.domain.transaction import Expense, Income, Transaction, Transfer
 from pft.services.ledger import Ledger
@@ -13,6 +14,7 @@ from pft.services.reports import (
     MonthlySummaryData,
     Report,
     ReportData,
+    parse_month,
     previous_month,
     savings_rate,
 )
@@ -186,3 +188,22 @@ def test_build_runs_collect_then_summarize() -> None:
 def test_report_base_class_cannot_be_used_directly() -> None:
     with pytest.raises(TypeError):
         Report()  # type: ignore[abstract]
+
+
+@pytest.mark.parametrize("text", ["0000-01", "0001-12", "1899-12", "9999-01"])
+def test_months_outside_the_supported_years_are_an_invalid_date(text: str) -> None:
+    with pytest.raises(InvalidDateError) as caught:
+        parse_month(text)
+    assert caught.value.field == "month"
+
+
+def test_edge_years_are_accepted_and_build_without_error() -> None:
+    assert parse_month("1900-01") == (1900, 1)
+    assert parse_month("9998-12") == (9998, 12)
+    assert MonthlySummary(Ledger(), 1900, 1).build().totals.transaction_count == 0
+    assert MonthlySummary(Ledger(), 9998, 12).build().totals.transaction_count == 0
+
+
+def test_monthly_summary_rejects_an_unsupported_year() -> None:
+    with pytest.raises(InvalidDateError):
+        MonthlySummary(Ledger(), 0, 1)

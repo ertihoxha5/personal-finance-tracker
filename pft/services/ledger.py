@@ -56,6 +56,9 @@ class Ledger:
         self._observers: list[Observer] = []
         self._recurring: list[RecurringTransaction] = []
         self._next_account_id = 1
+        # Highest transaction ID ever used. Deleting the newest transaction must not let its
+        # ID come back, so the high-water mark is kept (and saved) apart from the transactions.
+        self._highest_transaction_id = 0
 
     # --- accounts -----------------------------------------------------------
 
@@ -76,9 +79,20 @@ class Ledger:
         self._accounts[account.id] = account
         self._next_account_id = max(self._next_account_id, account.id + 1)
 
+    @property
+    def next_account_id(self) -> int:
+        """The ID the next new account gets. Repositories save it so deleted IDs stay retired."""
+        return self._next_account_id
+
+    def restore_id_counters(self, next_account_id: int, next_transaction_id: int) -> None:
+        """Put back the saved ID counters after loading. They can only move forward."""
+        self._next_account_id = max(self._next_account_id, next_account_id)
+        self._highest_transaction_id = max(self._highest_transaction_id, next_transaction_id - 1)
+
     def close_account(self, account_id: int) -> Account:
         """Remove and return the account. Observers are not told; only transactions notify."""
         account = self.account(account_id)
+        self._remember_transaction_ids()  # its transaction IDs stay used after it is gone
         del self._accounts[account_id]
         # Its recurring rules would point at a missing account, so they go too (#25).
         self._recurring = [r for r in self._recurring if r.template.account_id != account_id]
@@ -104,6 +118,7 @@ class Ledger:
 
     def remove_transaction(self, account_id: int, tx_id: int) -> AccountTransaction:
         """Remove and return a transaction. Removing one side of a transfer removes both (#23)."""
+        self._remember_transaction_ids()
         removed = self.account(account_id).remove(tx_id)
         events = [TransactionRemoved(account_id, removed)]
         if isinstance(removed, Transfer):
@@ -116,8 +131,20 @@ class Ledger:
         return removed
 
     def next_transaction_id(self) -> int:
-        """One more than the highest transaction ID in any account (1 when there are none)."""
-        return max((t.id for t in self.all_transactions()), default=0) + 1
+        """One more than the highest transaction ID ever used, so an ID is never reused."""
+        self._remember_transaction_ids()
+        return self._highest_transaction_id + 1
+
+    def _remember_transaction_ids(self) -> None:
+        """Fold the IDs of the transactions that exist now into the high-water mark."""
+        current = max((t.id for t in self.all_transactions()), default=0)
+        self._highest_transaction_id = max(self._highest_transaction_id, current)
+
+    @property
+    def highest_transaction_id(self) -> int:
+        """Highest transaction ID ever used; repositories save the next one after it."""
+        self._remember_transaction_ids()
+        return self._highest_transaction_id
 
     def transfer(
         self,

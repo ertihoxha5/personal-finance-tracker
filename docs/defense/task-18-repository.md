@@ -52,3 +52,8 @@
 - The React Transactions page and Dashboard charts still use fixtures; only Accounts and the
   net-worth cards use the API. Adding a transaction from the UI is not built; the route exists.
 - Whole-ledger save on every change is simple and fine for this data size; it would not scale.
+
+## Review fix: all-or-nothing CSV save and IDs never reused
+- CSV: every file is first written to `<name>.tmp`; only when all are complete are the old files moved to `.bak` and the new ones moved in. Any failure puts the whole previous snapshot back, so there is never a mix of old and new files. A crash during the swap is repaired on the next load or save from the `.bak` files.
+- IDs: the Ledger keeps a high-water mark of transaction IDs and the next account ID. They are saved with the data (`counters.csv`, a `counters` object in JSON, an `id_counters` table in SQLite), so deleting the newest account or transaction never lets its ID come back after a reload. Counters only move forward; older files without counters still load.
+- Regression tests: failure while writing the second CSV file, failure while swapping the second file, crash recovery, and delete then reload then create for accounts, transactions and the transactions of a deleted account, on all three repositories.

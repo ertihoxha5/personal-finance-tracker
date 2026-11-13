@@ -92,6 +92,9 @@ def test_report_monthly_matches_the_plan_example(run: Run) -> None:
         ("list", "--month", "nov"),
         ("list", "--sort", "colour"),
         ("report", "monthly", "--month", "2026-00"),
+        ("report", "monthly", "--month", "0000-01"),  # year 0 used to be an uncaught ValueError
+        ("report", "monthly", "--month", "9999-12"),
+        ("list", "--month", "0000-01"),
     ],
 )
 def test_invalid_input_gives_a_friendly_error_and_no_traceback(

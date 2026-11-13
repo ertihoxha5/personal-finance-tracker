@@ -51,3 +51,7 @@
   the previous one). That is fine at this data size.
 - The CSV report export now writes only income, expenses, net and savings rate (not the count).
 - `fixtures/dashboard.js` is kept only for the CSV export tests; the screen no longer uses it.
+
+## Review fix: supported years
+- `parse_month` (and `MonthlySummary`) accept years 1900 to 9998 only. Year 0000 made the report build impossible dates (HTTP 500, uncaught ValueError in the CLI); now it is an `InvalidDateError` (field `month`): 422 in the API, "Error: ..." and exit code 1 in the CLI.
+- Regression tests: `test_months_outside_the_supported_years_are_an_invalid_date`, the dashboard API cases and the CLI cases for `0000-01`.

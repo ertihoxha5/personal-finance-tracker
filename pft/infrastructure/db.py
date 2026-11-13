@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS accounts (
     currency TEXT NOT NULL DEFAULT 'EUR'
 );
 
+-- Next account and transaction ID (#18). Saved apart from the rows, so deleting the newest
+-- account or transaction never lets its ID come back after a reload.
+CREATE TABLE IF NOT EXISTS id_counters (
+    name TEXT PRIMARY KEY,
+    value INTEGER NOT NULL
+);
+
 -- amount_cents is always positive; kind (and a transfer's direction) gives the sign.
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
