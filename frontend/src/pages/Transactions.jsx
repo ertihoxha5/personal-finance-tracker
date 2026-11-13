@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { listAccounts } from '../api/accounts.js'
-import { transactionExport } from '../api/exports.js'
+import { exportSnapshotReady, transactionExport } from '../api/exports.js'
 import { createRecurring, listRecurring } from '../api/recurring.js'
 import { createTransaction, fromApi, searchTransactions, transactionQuery } from '../api/transactions.js'
 import CsvDownload from '../components/CsvDownload.jsx'
@@ -26,15 +26,21 @@ export default function Transactions() {
   const accounts = useLoad(listAccounts, 'accounts')
   const recurring = useLoad(listRecurring, 'recurring')
   // Wait for typing to pause, so the note search sends one request, not one per key.
-  const query = useDebounced(transactionQuery(filters))
+  const currentQuery = transactionQuery(filters)
+  const query = useDebounced(currentQuery)
   const results = useLoad(
-    () => (invalid ? Promise.resolve(null) : searchTransactions(filters)),
+    async () => {
+      if (invalid) return null
+      const snapshot = structuredClone(filters)
+      return { query: transactionQuery(snapshot), filters: snapshot, rows: await searchTransactions(snapshot) }
+    },
     `${invalid}|${query}`,
   )
 
   const update = (key, value) => setFilters((previous) => ({ ...previous, [key]: value }))
   const accountName = (id) => accounts.data?.find((account) => account.id === id)?.name ?? `Account ${id}`
-  const rows = results.data ? results.data.map(fromApi) : null
+  const rows = results.data ? results.data.rows.map(fromApi) : null
+  const exportReady = exportSnapshotReady(results, currentQuery, invalid)
   const sortDescription = `Sorted by ${filters.sortKey}, ${filters.sortDirection === 'desc' ? 'descending' : 'ascending'}`
 
   const active = [
@@ -233,8 +239,8 @@ export default function Transactions() {
         <CsvDownload
           defaultFilename="transactions.csv"
           label="Download transactions CSV"
-          disabled={invalid || !rows}
-          buildExport={() => transactionExport(results.data, filters)}
+          disabled={!exportReady}
+          buildExport={() => transactionExport(results.data.rows, results.data.filters)}
         />
         <p role="status">
           {invalid

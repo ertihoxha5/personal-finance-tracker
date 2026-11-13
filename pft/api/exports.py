@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, model_validator
 
-from pft.infrastructure.exporters import CsvExporter
+from pft.infrastructure.exporters import CsvExporter, Exporter, MarkdownExporter
 
 router = APIRouter(prefix="/api/exports", tags=["exports"])
 FILENAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._ -]*\.csv$"
@@ -53,5 +53,38 @@ def download_csv(payload: CsvDownloadRequest) -> Response:
     return Response(
         content=content,
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{payload.filename}"'},
+    )
+
+
+class TextDownloadRequest(CsvDownloadRequest):
+    """The same snapshot contract for the two approved text formats."""
+
+    filename: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._ -]*\.(json|md)$", max_length=100)
+
+
+@router.post("/{fmt}")
+def download_text(fmt: str, payload: TextDownloadRequest) -> Response:
+    if fmt not in {"json", "md"}:
+        raise HTTPException(status_code=404, detail="Unsupported export format.")
+    if not payload.filename.endswith(f".{fmt}"):
+        raise HTTPException(status_code=422, detail="Filename must match the selected format.")
+    exporter = Exporter.for_format(fmt)
+    if isinstance(exporter, MarkdownExporter):
+        exporter.fieldnames = tuple(payload.columns)
+    # Keep the requested column order, including missing cells and empty reports.
+    rows = [{column: row.get(column) for column in payload.columns} for row in payload.rows]
+    try:
+        with TemporaryDirectory(prefix="pft-download-") as directory:
+            path = Path(directory) / f"export.{fmt}"
+            exporter.export(rows, path)
+            content = path.read_bytes()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="The export could not be created. Try again."
+        ) from exc
+    return Response(
+        content=content,
+        media_type="application/json" if fmt == "json" else "text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{payload.filename}"'},
     )
