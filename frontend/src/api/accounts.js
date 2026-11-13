@@ -82,3 +82,15 @@ export async function updateTransaction(accountId, txId, { date, description, ki
 export async function deleteTransaction(accountId, txId) {
   return request(`/accounts/${accountId}/transactions/${txId}`, { method: 'DELETE' })
 }
+
+// Move money between two accounts (#23). The server's Ledger.transfer adds both sides (OUT on
+// the source, IN on the destination, one shared transfer_id) or neither, and rejects the same
+// account twice or a source that would go below zero. Resolves with [outSide, inSide].
+// Transfers are not income or expense, so only the two balances change; net worth stays the same.
+export async function createTransfer({ fromAccountId, toAccountId, amount, date, note = '' }) {
+  const sides = await request('/transfers', {
+    method: 'POST',
+    body: { from_account_id: fromAccountId, to_account_id: toAccountId, amount, date, note },
+  })
+  return sides.map(toTransaction)
+}

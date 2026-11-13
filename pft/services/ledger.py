@@ -11,16 +11,19 @@ still get the event.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import chain
 from typing import Protocol
 
 from pft.domain.account import Account, AccountTransaction
-from pft.domain.category import AccountType
-from pft.domain.exceptions import AccountNotFoundError, DataImportError
+from pft.domain.category import AccountType, Direction
+from pft.domain.exceptions import AccountNotFoundError, DataImportError, InvalidTransferError
 from pft.domain.money import Money
+from pft.domain.transaction import Transfer
 
 logger = logging.getLogger(__name__)
 
@@ -96,17 +99,85 @@ class Ledger:
         self._notify(TransactionAdded(account_id, transaction))
 
     def remove_transaction(self, account_id: int, tx_id: int) -> AccountTransaction:
+        """Remove and return a transaction. Removing one side of a transfer removes both (#23)."""
         removed = self.account(account_id).remove(tx_id)
-        self._notify(TransactionRemoved(account_id, removed))
+        events = [TransactionRemoved(account_id, removed)]
+        if isinstance(removed, Transfer):
+            other = self._counterpart(removed)
+            if other is not None:
+                self.account(other.account_id).remove(other.id)
+                events.append(TransactionRemoved(other.account_id, other))
+        for event in events:
+            self._notify(event)
         return removed
 
     def next_transaction_id(self) -> int:
         """One more than the highest transaction ID in any account (1 when there are none)."""
         return max((t.id for t in self.all_transactions()), default=0) + 1
 
+    def transfer(
+        self,
+        src: int,
+        dst: int,
+        money: Money,
+        date: dt.date,
+        note: str = "",
+    ) -> tuple[Transfer, Transfer]:
+        """Move money between two accounts as two linked Transfer rows (#23, FR-14).
+
+        The OUT side goes to ``src`` and the IN side to ``dst``; both share one
+        ``transfer_id``. It is all or nothing: if the second row cannot be added,
+        the first is taken out again, so no half-transfer is ever left behind.
+        Net worth does not change. Returns ``(out_side, in_side)``.
+        """
+        if src == dst:
+            raise InvalidTransferError(
+                "choose two different accounts for a transfer", field="to_account_id"
+            )
+        source, target = self.account(src), self.account(dst)
+        transfer_id = uuid.uuid4().hex
+        first_id = self.next_transaction_id()
+
+        def side(tx_id: int, account_id: int, direction: Direction) -> Transfer:
+            return Transfer(
+                id=tx_id,
+                account_id=account_id,
+                amount=money,
+                date=date,
+                note=note,
+                direction=direction,
+                transfer_id=transfer_id,
+            )
+
+        # Building both rows first runs every field check (amount, date, note) up front.
+        out_side = side(first_id, src, Direction.OUT)
+        in_side = side(first_id + 1, dst, Direction.IN)
+        if source.balance + out_side.signed_amount() < Money.zero(source.balance.currency):
+            raise InvalidTransferError(
+                f"the transfer is more than the {source.balance} in {source.name}", field="amount"
+            )
+
+        source.add(out_side)
+        try:
+            target.add(in_side)
+        except Exception:
+            source.remove(out_side.id)
+            raise
+        # Observers only hear about a transfer once both sides are in place.
+        self._notify(TransactionAdded(src, out_side))
+        self._notify(TransactionAdded(dst, in_side))
+        return out_side, in_side
+
     def all_transactions(self) -> Iterator[AccountTransaction]:
         """Every transaction of every account, one after another, without building a list."""
         return chain.from_iterable(self._accounts.values())
+
+    def _counterpart(self, side: Transfer) -> Transfer | None:
+        """The other row of the same transfer, or None if it is already gone."""
+        for t in self.all_transactions():
+            if isinstance(t, Transfer) and t.transfer_id == side.transfer_id and t.id != side.id:
+                return t
+        return None
 
     @property
     def net_worth(self) -> Money:

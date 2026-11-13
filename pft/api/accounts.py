@@ -64,6 +64,14 @@ class NewTransaction(BaseModel):
     note: str = ""
 
 
+class NewTransfer(BaseModel):
+    from_account_id: int
+    to_account_id: int
+    amount: str
+    date: str
+    note: str = ""
+
+
 class TransactionEdit(BaseModel):
     kind: str
     amount: str
@@ -253,6 +261,26 @@ def create_transaction(body: NewTransaction, store: Store) -> dict[str, Any]:
         )
         ledger.add_transaction(body.account_id, transaction)
         return transaction_dto(transaction)
+
+    return store.write(create)
+
+
+@router.post("/transfers", status_code=201)
+def create_transfer(body: NewTransfer, store: Store) -> list[dict[str, Any]]:
+    """Move money between two accounts (#23). Returns both sides: [out, in].
+
+    Ledger.transfer adds both rows or neither, and the store saves only when it succeeds.
+    """
+
+    def create(ledger: Ledger) -> list[dict[str, Any]]:
+        sides = ledger.transfer(
+            body.from_account_id,
+            body.to_account_id,
+            _amount_param(body.amount, "amount"),
+            _date_param(body.date, "date"),
+            body.note,
+        )
+        return [transaction_dto(t) for t in sides]
 
     return store.write(create)
 

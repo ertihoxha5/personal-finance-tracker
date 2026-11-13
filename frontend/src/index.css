@@ -687,6 +687,10 @@ body {
   justify-content: flex-start;
 }
 
+.page-header .button-row {
+  margin-top: 0;
+}
+
 .demo-form {
   margin-top: 1rem;
 }

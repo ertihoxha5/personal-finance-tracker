@@ -160,7 +160,7 @@ class Transfer(Transaction):
 
     A transfer is stored as two Transfer objects, OUT from one account and IN to
     the other, sharing one ``transfer_id``. Creating the pair is Ledger.transfer's
-    job (#26); this class is one side. Its category defaults to OTHER; reports
+    job (#23); this class is one side. Its category defaults to OTHER; reports
     leave transfers out by kind, not by category.
     """
 

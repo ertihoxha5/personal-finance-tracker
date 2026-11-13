@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   createAccount,
+  createTransfer,
   deleteAccount,
   deleteTransaction,
   getNetWorth,
@@ -13,6 +14,7 @@ import AccountForm from '../components/accounts/AccountForm.jsx'
 import AccountsTable from '../components/accounts/AccountsTable.jsx'
 import ConfirmDialog from '../components/accounts/ConfirmDialog.jsx'
 import TransactionsPanel from '../components/accounts/TransactionsPanel.jsx'
+import TransferForm from '../components/accounts/TransferForm.jsx'
 import NetWorthCard from '../components/NetWorthCard.jsx'
 import SaveStatus from '../components/SaveStatus.jsx'
 import { useLoad } from '../hooks/useLoad.js'
@@ -28,6 +30,7 @@ export default function Accounts() {
   )
 
   const [creating, setCreating] = useState(false)
+  const [transferring, setTransferring] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState(null)
   // { state: 'idle' | 'saving' | 'saved' | 'failed', message }
@@ -64,6 +67,18 @@ export default function Accounts() {
   async function handleCreate(values) {
     const outcome = await mutate(() => createAccount(values), `Created ${values.name.trim()}.`)
     if (outcome.ok) setCreating(false)
+    return outcome
+  }
+
+  // mutate() reloads every balance and net worth, so both accounts show their new balance.
+  async function handleTransfer(values) {
+    const from = accounts.data.find((a) => a.id === values.fromAccountId)
+    const to = accounts.data.find((a) => a.id === values.toAccountId)
+    const outcome = await mutate(
+      () => createTransfer(values),
+      `Moved ${formatEUR(values.amount)} from ${from?.name} to ${to?.name}.`,
+    )
+    if (outcome.ok) setTransferring(false)
     return outcome
   }
 
@@ -151,9 +166,16 @@ export default function Accounts() {
       <div className="page-header">
         <h2>Accounts</h2>
         {hasAccounts && !creating && (
-          <button type="button" className="button" onClick={() => setCreating(true)}>
-            Add account
-          </button>
+          <div className="button-row button-row-start">
+            {accounts.data.length > 1 && !transferring && (
+              <button type="button" className="button button-secondary" onClick={() => setTransferring(true)}>
+                Transfer
+              </button>
+            )}
+            <button type="button" className="button" onClick={() => setCreating(true)}>
+              Add account
+            </button>
+          </div>
         )}
       </div>
 
@@ -173,6 +195,14 @@ export default function Accounts() {
       {hasAccounts && <NetWorthCard net={netWorth} />}
 
       {creating && <AccountForm onSubmit={handleCreate} onCancel={() => setCreating(false)} busy={busy} />}
+      {transferring && hasAccounts && (
+        <TransferForm
+          accounts={accounts.data}
+          onSubmit={handleTransfer}
+          onCancel={() => setTransferring(false)}
+          busy={busy}
+        />
+      )}
       {list}
 
       {selected && (
