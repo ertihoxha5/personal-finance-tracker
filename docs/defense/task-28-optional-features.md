@@ -31,8 +31,45 @@ Tests cover balances, identity, linked-pair deletion/restoration, stack ordering
 redo clearing, empty history, failed operations, external edits, missing accounts,
 mutable input isolation and monotonic allocation of new IDs after undo.
 
+## Part 2: bank CSV import
+
+`pft/infrastructure/importer.py` adds BankCsvImporter. The supported template is
+`date,amount,category` with optional `note,currency` columns. Columns can be in
+any order and header names ignore surrounding whitespace and case. Files use
+UTF-8 with or without a BOM. The importer does not guess bank-specific layouts.
+
+Positive signed amounts become income and negative amounts become expenses.
+TransactionFactory provides existing date/category/amount validation. Quoted
+decimal commas are accepted. Zero, malformed signs, ambiguous amounts, invalid
+categories/dates and currency mismatches produce row errors. Transfers remain
+linked operations and cannot be created as individual bank rows.
+
+ImportResult contains accepted rows and ImportIssue objects with a row number,
+reason and optional field. Row numbers are physical ending line numbers for CSV
+records, including multiline notes. Wrong column counts reject that row; broken
+CSV syntax, invalid headers and more than 10,000 data rows abort before mutation.
+Blank rows are ignored. Headers without data are a valid empty import.
+
+Preview uses an observer-free copy of the accounts and ID counters. It cannot
+change live transactions or send live budget warnings. Import uses the normal
+Ledger addition path and leaves repository saving to the caller. There is no
+duplicate detection: importing a file twice imports its rows twice because the
+template contains no unique bank transaction reference. The later preview UI
+must make that explicit and must revalidate on confirmation.
+
+Example synthetic CSV:
+
+```csv
+date,amount,category,note
+2026-11-15,-12.50,food,Lunch with team
+2026-11-16,100.00,salary,Example payment
+```
+
+Importer tests cover mixed valid/invalid input, precise amounts, CSV escaping,
+BOM/Unicode, previews, currencies, schema errors, malformed quoting and limits.
+API/React preview and confirmation are planned for a later integration part.
+
 ## Remaining parts
 
-- Bank CSV parsing/import with valid rows and numbered validation errors.
 - Category pie and monthly trend PNG generation using matplotlib.
 - Optional API/React integration, feature gates and UI acceptance checks.
