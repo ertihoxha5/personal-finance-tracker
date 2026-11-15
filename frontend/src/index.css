@@ -943,3 +943,28 @@ body {
   margin: 0 0 0.25rem;
   padding-left: 1.25rem;
 }
+
+/* #31 budget report: the status is a word; the border style and colour are extra cues. */
+.status-tag {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-ok {
+  color: #276749;
+}
+
+.status-warning {
+  color: #8a5a00;
+  border-style: dashed;
+}
+
+.status-over {
+  color: #c53030;
+  border-width: 2px;
+}

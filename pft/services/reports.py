@@ -13,6 +13,11 @@ transactions gives zeros, not an error.
 date range, each with its amount and its share of total spending, largest first. Categories
 with no spending are left out.
 
+``TrendReport`` (#31) gives income, expenses and net for each of the last N months, with a
+zero row for a month without data. ``BudgetReport`` (#31) compares the budgets of one month
+(#27) with what was really spent: planned, actual, difference and a status per category.
+Both only write ``collect()`` and ``summarize()``; ``build()`` is inherited from ``Report``.
+
 Money is exact. Category totals are summed in a ``Counter`` of integer cents, so a total never
 passes through a float, and the savings rate is rounded half-up to one decimal place.
 """
@@ -26,9 +31,11 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from enum import StrEnum
 from itertools import islice
 from typing import Generic, TypeVar
 
+from pft.domain.budget import BUDGET_EXCEEDED, BUDGET_WARNING, Budget
 from pft.domain.category import Category, Kind
 from pft.domain.exceptions import InvalidDateError
 from pft.domain.money import Money
@@ -43,6 +50,7 @@ _ONE_DECIMAL = Decimal("0.1")
 # the dashboard five months back; a year near 0001 or 9999 would make those dates impossible.
 MIN_YEAR = 1900
 MAX_YEAR = 9998
+MAX_TREND_MONTHS = 120  # ten years is more than any chart or table needs
 _TENTHS_IN_WHOLE = 1000  # 100.0 percent, counted in steps of 0.1
 
 
@@ -266,6 +274,163 @@ def _share_in_tenths(cents: list[int], total_cents: int) -> list[int]:
     return tenths
 
 
+@dataclass(frozen=True)
+class MonthTotals:
+    """Income, expenses and net of one month in a trend."""
+
+    year: int
+    month: int
+    income: Money
+    expenses: Money
+    net: Money
+
+
+@dataclass(frozen=True)
+class TrendReportData(ReportData):
+    months: tuple[MonthTotals, ...]  # oldest first; always exactly N rows
+
+
+class TrendReport(Report[TrendReportData]):
+    """Income, expenses and net for the last N months, ending with (year, month) (#31, FR-10).
+
+    Every month in the range gets a row, in date order; a month without transactions shows
+    zeros. Transfers are left out, as in every other report.
+    """
+
+    def __init__(self, ledger: Ledger, months: int, year: int, month: int) -> None:
+        if not 1 <= month <= 12:
+            raise ValueError(f"month must be 1 to 12, got {month}")
+        if not 1 <= months <= MAX_TREND_MONTHS:
+            raise ValueError(f"months must be 1 to {MAX_TREND_MONTHS}, got {months}")
+        _check_year(year, "month")
+        self._ledger = ledger
+        # The months of the trend, oldest first, counted back from the last one.
+        covered = [(year, month)]
+        for _ in range(months - 1):
+            covered.append(previous_month(*covered[-1]))
+        covered.reverse()
+        _check_year(covered[0][0], "month")
+        self.months = tuple(covered)
+
+    def collect(self) -> Iterable[Transaction]:
+        """Income and expenses from the first day of the first month to the end of the last."""
+        start = dt.date(*self.months[0], 1)
+        end = _last_day(*self.months[-1])
+        rows = (t for t in self._ledger.all_transactions() if isinstance(t, Transaction))
+        income_or_expense = any_of(by_kind(Kind.INCOME), by_kind(Kind.EXPENSE))
+        return apply_filters(rows, income_or_expense, between(start, end))
+
+    def summarize(self, rows: Iterable[Transaction]) -> TrendReportData:
+        # Start every month at zero, so a month without data still has its row.
+        income: Counter[tuple[int, int]] = Counter({key: 0 for key in self.months})
+        expenses: Counter[tuple[int, int]] = Counter({key: 0 for key in self.months})
+        for t in rows:
+            target = income if t.kind is Kind.INCOME else expenses
+            target[(t.date.year, t.date.month)] += _cents(t.amount)
+        first, last = self.months[0], self.months[-1]
+        return TrendReportData(
+            title=f"Trend {first[0]}-{first[1]:02d} to {last[0]}-{last[1]:02d}",
+            months=tuple(
+                MonthTotals(
+                    year,
+                    month,
+                    _from_cents(income[year, month]),
+                    _from_cents(expenses[year, month]),
+                    _from_cents(income[year, month] - expenses[year, month]),
+                )
+                for year, month in self.months
+            ),
+        )
+
+
+class BudgetStatus(StrEnum):
+    """How a budget is doing: below 80% is OK, from 80% WARNING, from 100% OVER."""
+
+    OK = "ok"
+    WARNING = "warning"
+    OVER = "over"
+
+
+@dataclass(frozen=True)
+class BudgetLine:
+    """One budget: what was planned, what was spent and what is left."""
+
+    category: Category
+    planned: Money
+    actual: Money
+    difference: Money  # planned - actual; negative when more was spent than planned
+    usage: Decimal  # percent of the plan that is used, rounded down to one decimal
+    status: BudgetStatus
+
+
+@dataclass(frozen=True)
+class BudgetReportData(ReportData):
+    month: str
+    lines: tuple[BudgetLine, ...]  # ordered by category name
+    planned: Money
+    actual: Money
+    difference: Money
+
+
+class BudgetReport(Report[BudgetReportData]):
+    """Planned versus actual spending for the budgets of one month (#31, FR-17).
+
+    The budgets are passed in, because the Ledger does not know about them (#27). The status
+    of each line comes from the same limits as the warnings: ``BUDGET_WARNING`` (80%) and
+    ``BUDGET_EXCEEDED`` (100%), through ``Budget.level_reached``.
+    """
+
+    def __init__(self, ledger: Ledger, budgets: Iterable[Budget], month: str) -> None:
+        self.year, self.month_number = parse_month(month)
+        self._ledger = ledger
+        self.month = f"{self.year}-{self.month_number:02d}"
+        chosen = (b for b in budgets if b.month == self.month)
+        self._budgets = sorted(chosen, key=lambda b: b.category.value)
+
+    def collect(self) -> Iterable[Transaction]:
+        """The month's expenses. Income and transfers never use up a budget."""
+        start = dt.date(self.year, self.month_number, 1)
+        rows = (t for t in self._ledger.all_transactions() if isinstance(t, Transaction))
+        return apply_filters(
+            rows, by_kind(Kind.EXPENSE), between(start, _last_day(self.year, self.month_number))
+        )
+
+    def summarize(self, rows: Iterable[Transaction]) -> BudgetReportData:
+        expenses = list(rows)
+        lines = []
+        for budget in self._budgets:
+            # Budget.covers is the one rule for what counts towards a budget (#27).
+            actual = _from_cents(sum(_cents(t.amount) for t in expenses if budget.covers(t)))
+            actual = Money(actual.amount, budget.limit.currency)
+            lines.append(
+                BudgetLine(
+                    category=budget.category,
+                    planned=budget.limit,
+                    actual=actual,
+                    difference=budget.limit - actual,
+                    usage=budget.percent_of(actual),
+                    status=_STATUS_FOR_LEVEL[budget.level_reached(actual)],
+                )
+            )
+        planned = sum((line.planned for line in lines), Money.zero())
+        spent = sum((line.actual for line in lines), Money.zero())
+        return BudgetReportData(
+            title=f"Budget report {self.month}",
+            month=self.month,
+            lines=tuple(lines),
+            planned=planned,
+            actual=spent,
+            difference=planned - spent,
+        )
+
+
+_STATUS_FOR_LEVEL: dict[Decimal | None, BudgetStatus] = {
+    None: BudgetStatus.OK,
+    BUDGET_WARNING: BudgetStatus.WARNING,
+    BUDGET_EXCEEDED: BudgetStatus.OVER,
+}
+
+
 def _last_day(year: int, month: int) -> dt.date:
     first_next = dt.date(year + 1, 1, 1) if month == 12 else dt.date(year, month + 1, 1)
     return first_next - dt.timedelta(days=1)
@@ -287,15 +452,23 @@ def _totals(rows: list[Transaction]) -> PeriodTotals:
 
 
 __all__ = [
+    "MAX_TREND_MONTHS",
+    "BudgetLine",
+    "BudgetReport",
+    "BudgetReportData",
+    "BudgetStatus",
     "CategoryReport",
     "CategoryReportData",
     "CategoryShare",
     "CategoryTotal",
     "MonthlySummary",
+    "MonthTotals",
     "MonthlySummaryData",
     "PeriodTotals",
     "Report",
     "ReportData",
+    "TrendReport",
+    "TrendReportData",
     "parse_month",
     "previous_month",
     "savings_rate",

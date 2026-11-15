@@ -38,6 +38,13 @@ export const FREQUENCY_LABELS = Object.freeze({
   yearly: 'Yearly',
 })
 
+// BudgetStatus in pft/services/reports.py (#31): below 80% ok, from 80% warning, from 100% over.
+export const BUDGET_STATUS_LABELS = Object.freeze({
+  ok: 'OK',
+  warning: 'Warning',
+  over: 'Over',
+})
+
 // A value the frontend does not know yet (e.g. the API added one) still reads
 // sensibly: 'credit_line' -> 'Credit line'. Missing values show as 'Unknown'.
 export function fallbackLabel(value) {
@@ -54,6 +61,7 @@ export const kindLabel = lookup(KIND_LABELS)
 export const directionLabel = lookup(DIRECTION_LABELS)
 export const accountTypeLabel = lookup(ACCOUNT_TYPE_LABELS)
 export const frequencyLabel = lookup(FREQUENCY_LABELS)
+export const budgetStatusLabel = lookup(BUDGET_STATUS_LABELS)
 
 // [{ value, label }] in API order, for <select> options.
 export const toOptions = (labels) => Object.entries(labels).map(([value, label]) => ({ value, label }))

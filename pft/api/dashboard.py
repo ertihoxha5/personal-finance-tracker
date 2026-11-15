@@ -17,7 +17,7 @@ from pft.api.store import LedgerStore, get_store
 from pft.domain.category import Kind
 from pft.domain.transaction import Transaction
 from pft.services.ledger import Ledger
-from pft.services.reports import MonthlySummary, PeriodTotals, parse_month, previous_month
+from pft.services.reports import MonthlySummary, PeriodTotals, TrendReport, parse_month
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 Store = Annotated[LedgerStore, Depends(get_store)]
@@ -62,19 +62,15 @@ def build_dashboard(ledger: Ledger, requested: str | None) -> dict[str, Any]:
 
     summary = MonthlySummary(ledger, year, month).build()
 
-    trend = []
-    ty, tm = year, month
-    for _ in range(TREND_MONTHS):
-        totals = MonthlySummary(ledger, ty, tm).build().totals
-        trend.append(
-            {
-                "month": _key(ty, tm),
-                "income": str(totals.income.amount),
-                "expenses": str(totals.expenses.amount),
-            }
-        )
-        ty, tm = previous_month(ty, tm)
-    trend.reverse()
+    # TrendReport (#31) reads the Ledger once and returns the months oldest first.
+    trend = [
+        {
+            "month": _key(row.year, row.month),
+            "income": str(row.income.amount),
+            "expenses": str(row.expenses.amount),
+        }
+        for row in TrendReport(ledger, TREND_MONTHS, year, month).build().months
+    ]
 
     in_month = [t for t in counted if (t.date.year, t.date.month) == (year, month)]
     newest_first = sorted(in_month, key=lambda t: (t.date, t.id), reverse=True)

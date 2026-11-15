@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { listAccounts } from '../api/accounts.js'
+import { fetchBudgetReport } from '../api/budgetReport.js'
 import { deleteBudget, listBudgets, saveBudget } from '../api/budgets.js'
 import { createTransaction } from '../api/transactions.js'
 import BudgetCard from '../components/budgets/BudgetCard.jsx'
 import BudgetForm from '../components/budgets/BudgetForm.jsx'
+import BudgetReport from '../components/budgets/BudgetReport.jsx'
 import SpendForm from '../components/budgets/SpendForm.jsx'
 import SaveStatus from '../components/SaveStatus.jsx'
 import { useLoad } from '../hooks/useLoad.js'
@@ -20,6 +22,8 @@ import { todayISO } from '../lib/transactions.js'
 export default function Budgets() {
   const [month, setMonth] = useState(() => todayISO().slice(0, 7))
   const budgets = useLoad(() => listBudgets(month), month)
+  // Planned versus actual (#31): the same month filter as the list above.
+  const report = useLoad(() => fetchBudgetReport(month), month)
   const accounts = useLoad(listAccounts, 'accounts')
   const [save, setSave] = useState({ state: 'idle' })
   const [busy, setBusy] = useState(false)
@@ -32,6 +36,7 @@ export default function Budgets() {
       const result = await action()
       setSave({ state: 'saved' })
       budgets.reload()
+      report.reload()
       return result
     } catch (error) {
       setSave({ state: 'failed', message: error.message })
@@ -166,6 +171,8 @@ export default function Budgets() {
       <BudgetForm key={month} month={month} onSubmit={handleSave} />
 
       {list}
+
+      <BudgetReport month={month} report={report} thresholds={data?.thresholds} />
 
       {accounts.data && accounts.data.length > 0 && <SpendForm accounts={accounts.data} onSubmit={handleSpend} />}
       {accounts.data && accounts.data.length === 0 && (
