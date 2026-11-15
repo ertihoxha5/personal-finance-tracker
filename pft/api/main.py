@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from pft.api.accounts import router as accounts_router
+from pft.api.budgets import router as budgets_router
 from pft.api.dashboard import router as dashboard_router
 from pft.api.exports import router as exports_router
 from pft.api.recurring import router as recurring_router
@@ -28,6 +29,7 @@ app.include_router(accounts_router)
 app.include_router(dashboard_router)
 app.include_router(recurring_router)
 app.include_router(reports_router)
+app.include_router(budgets_router)
 
 
 def _status_for(error: FinanceError) -> int:

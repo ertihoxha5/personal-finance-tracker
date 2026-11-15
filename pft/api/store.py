@@ -13,6 +13,7 @@ import threading
 from collections.abc import Callable
 from typing import TypeVar
 
+from pft.domain.budget import Budget
 from pft.infrastructure.repository import Repository, SqliteRepository
 from pft.services.ledger import Ledger
 
@@ -53,6 +54,18 @@ class LedgerStore:
             ledger = self._load()
             result = action(ledger)
             self._repository.save(ledger)
+            return result
+
+    def budgets(self) -> list[Budget]:
+        """The stored budgets (#27). Takes no lock, so it can be called inside read/write."""
+        return self._repository.load_budgets()
+
+    def change_budgets(self, action: Callable[[list[Budget]], T]) -> T:
+        """Run ``action`` on the list of stored budgets, then save the list it changed."""
+        with self._lock:
+            budgets = self._repository.load_budgets()
+            result = action(budgets)
+            self._repository.save_budgets(budgets)
             return result
 
 

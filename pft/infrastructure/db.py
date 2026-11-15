@@ -60,6 +60,15 @@ CREATE TABLE IF NOT EXISTS recurring (
     end_date TEXT,
     last_run TEXT
 );
+
+-- Budgets (#27): one limit per category and month ('2026-11'), in integer cents.
+CREATE TABLE IF NOT EXISTS budgets (
+    category TEXT NOT NULL,
+    month TEXT NOT NULL,
+    limit_cents INTEGER NOT NULL CHECK (limit_cents > 0),
+    currency TEXT NOT NULL DEFAULT 'EUR',
+    PRIMARY KEY (category, month)
+);
 """
 
 # Task #5 created accounts without type/currency and transactions with a signed amount and a

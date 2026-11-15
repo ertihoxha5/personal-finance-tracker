@@ -820,3 +820,126 @@ body {
   border-top: 2px solid #9aa5b1;
   border-bottom: 0;
 }
+
+/* #27 budgets: the status is always written in words; colour is only an extra cue. */
+.budgets {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.month-picker input[type='month'],
+.field input[type='month'] {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #9aa5b1;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  min-width: 0;
+}
+
+.budget-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1rem;
+}
+
+.budget-card h3 {
+  margin: 0;
+}
+
+.budget-amounts {
+  margin: 0.5rem 0 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-bar {
+  position: relative;
+  height: 14px;
+  border: 1px solid #7b8794;
+  border-radius: 999px;
+  background: #eef1f4;
+  overflow: hidden;
+}
+
+.budget-bar-fill {
+  height: 100%;
+  background: #276749;
+}
+
+.budget-warning .budget-bar-fill {
+  background: #b7791f;
+}
+
+.budget-exceeded .budget-bar-fill {
+  background: #c53030;
+}
+
+.budget-bar-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #1f2933;
+}
+
+.budget-scale {
+  position: relative;
+  height: 1.3rem;
+  font-size: 0.8rem;
+  color: #52606d;
+}
+
+.budget-scale span {
+  position: absolute;
+  top: 0.15rem;
+  padding-right: 0.4rem;
+  transform: translateX(-100%); /* the label ends at its mark, clear of the limit label */
+  white-space: nowrap;
+}
+
+.budget-scale .budget-scale-end {
+  right: 0;
+  padding-right: 0;
+  transform: none;
+}
+
+.budget-status {
+  margin: 0.5rem 0 0;
+}
+
+.budget-warning {
+  border-left: 4px solid #b7791f;
+}
+
+.budget-exceeded {
+  border-left: 4px solid #c53030;
+}
+
+.budget-alert {
+  padding: 0.75rem 1rem;
+  border: 1px solid #f5c2c2;
+  border-left: 4px solid #c53030;
+  border-radius: 6px;
+  background: #fff5f5;
+}
+
+.budget-alert-current {
+  border-color: #f0d9a8;
+  border-left-color: #b7791f;
+  background: #fffaf0;
+}
+
+.budget-alert h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.budget-alert ul {
+  margin: 0 0 0.25rem;
+  padding-left: 1.25rem;
+}

@@ -27,6 +27,7 @@ from pft.domain.exceptions import (
 from pft.domain.factory import TransactionFactory
 from pft.domain.money import DEFAULT_CURRENCY, Money
 from pft.domain.transaction import Transaction
+from pft.services.budget_monitor import BudgetMonitor, BudgetWarning
 from pft.services.filters import (
     Predicate,
     amount_between,
@@ -248,6 +249,12 @@ def search_transactions(
 
 @router.post("/transactions", status_code=201)
 def create_transaction(body: NewTransaction, store: Store) -> dict[str, Any]:
+    """Add an income or expense. ``warnings`` lists the budget levels this expense reached.
+
+    The Ledger knows nothing about budgets: a BudgetMonitor is subscribed as an Observer
+    for this request and collects its warnings in a list (#27).
+    """
+
     def create(ledger: Ledger) -> dict[str, Any]:
         ledger.account(body.account_id)  # an unknown account is reported before anything else
         transaction = TransactionFactory.from_input(
@@ -259,8 +266,10 @@ def create_transaction(body: NewTransaction, store: Store) -> dict[str, Any]:
             body.note,
             transaction_id=ledger.next_transaction_id(),
         )
+        warnings: list[BudgetWarning] = []
+        ledger.subscribe(BudgetMonitor(ledger, store.budgets(), warnings.append))
         ledger.add_transaction(body.account_id, transaction)
-        return transaction_dto(transaction)
+        return transaction_dto(transaction) | {"warnings": [w.to_dict() for w in warnings]}
 
     return store.write(create)
 

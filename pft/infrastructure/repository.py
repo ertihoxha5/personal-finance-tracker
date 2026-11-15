@@ -19,8 +19,11 @@ object, an id_counters table), so an ID that belonged to a deleted account or tr
 never used again, even after a reload.
 
 Recurring rules (#25) are saved with the ledger: recurring.csv, a "recurring" list in JSON,
-and a recurring table in SQLite (same database transaction as everything else). Budgets do
-not exist yet (#27); budgets.csv is created with only a header and never overwritten.
+and a recurring table in SQLite (same database transaction as everything else).
+
+Budgets (#27) are stored next to the Ledger, not inside it, because the Ledger does not know
+about budgets: ``load_budgets()`` / ``save_budgets()`` read and write budgets.csv, the
+"budgets" list in JSON, or the budgets table in SQLite. Saving the Ledger never touches them.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from pft.domain.account import Account
+from pft.domain.budget import Budget
 from pft.domain.category import AccountType
 from pft.domain.exceptions import DataImportError, FinanceError, StorageError
 from pft.domain.factory import TransactionFactory
@@ -96,6 +100,14 @@ class Repository(ABC):
     def save(self, ledger: Ledger) -> None:
         """Store the whole Ledger. On failure the previously stored data is unchanged."""
 
+    @abstractmethod
+    def load_budgets(self) -> list[Budget]:
+        """Return the stored budgets (#27); an empty list when none were saved yet."""
+
+    @abstractmethod
+    def save_budgets(self, budgets: Sequence[Budget]) -> None:
+        """Replace the stored budgets. The Ledger's own data is not touched."""
+
 
 # --- shared helpers ---------------------------------------------------------------------
 
@@ -131,6 +143,19 @@ def _counters(ledger: Ledger) -> dict[str, int]:
         ACCOUNT_COUNTER: ledger.next_account_id,
         TRANSACTION_COUNTER: ledger.highest_transaction_id + 1,
     }
+
+
+def _budgets_from_rows(rows: Sequence[Mapping[str, Any]], source: str) -> list[Budget]:
+    """Rebuild budgets from stored rows; a bad row is reported with its position."""
+    budgets: list[Budget] = []
+    for number, row in enumerate(rows, start=1):
+        try:
+            budgets.append(Budget.from_row(row))
+        except FinanceError as exc:
+            raise DataImportError(
+                f"{source}, budget {number}: {exc.message}", field=exc.field
+            ) from exc
+    return budgets
 
 
 def _account_from_row(row: Mapping[str, Any]) -> Account:
@@ -230,9 +255,22 @@ class CsvRepository(Repository):
         }
         try:
             self._recover()
-            if not (self.folder / "budgets.csv").exists():  # never overwrite #27's data
+            if not (self.folder / "budgets.csv").exists():  # budgets are saved separately
                 files["budgets.csv"] = (BUDGET_COLUMNS, [])
             self._swap_in(files)
+        except OSError as exc:
+            raise StorageError(f"could not save to {self.folder}: {exc}") from exc
+
+    def load_budgets(self) -> list[Budget]:
+        self._recover()
+        rows = self._read("budgets.csv", BUDGET_COLUMNS)
+        return _budgets_from_rows(rows, str(self.folder / "budgets.csv"))
+
+    def save_budgets(self, budgets: Sequence[Budget]) -> None:
+        # The same write-then-swap as save(), so a failed write keeps the old budgets.csv.
+        try:
+            self._recover()
+            self._swap_in({"budgets.csv": (BUDGET_COLUMNS, [b.to_row() for b in budgets])})
         except OSError as exc:
             raise StorageError(f"could not save to {self.folder}: {exc}") from exc
 
@@ -319,19 +357,39 @@ class JsonRepository(Repository):
         )
 
     def save(self, ledger: Ledger) -> None:
-        # Budgets belong to a later task (#27); carry over whatever is stored.
+        # Budgets are saved by save_budgets (#27); carry over whatever is stored.
         try:
             previous = self._read()
         except DataImportError:
             previous = {}  # an unreadable old file is replaced by a good one
-        document = {
+        self._write(
+            {
+                "version": JSON_VERSION,
+                "accounts": _account_rows(ledger),
+                "transactions": _transaction_rows(ledger),
+                "budgets": previous.get("budgets", []),
+                "recurring": _recurring_rows(ledger),
+                "counters": _counters(ledger),
+            }
+        )
+
+    def load_budgets(self) -> list[Budget]:
+        rows = self._read().get("budgets", [])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise DataImportError(f'{self.path}: "budgets" must be a list of objects')
+        return _budgets_from_rows(rows, str(self.path))
+
+    def save_budgets(self, budgets: Sequence[Budget]) -> None:
+        document = self._read()  # keep the Ledger's data exactly as it is stored
+        empty: dict[str, Any] = {
             "version": JSON_VERSION,
-            "accounts": _account_rows(ledger),
-            "transactions": _transaction_rows(ledger),
-            "budgets": previous.get("budgets", []),
-            "recurring": _recurring_rows(ledger),
-            "counters": _counters(ledger),
+            "accounts": [],
+            "transactions": [],
+            "recurring": [],
         }
+        self._write({**empty, **document, "budgets": [b.to_row() for b in budgets]})
+
+    def _write(self, document: dict[str, Any]) -> None:
         try:
             with atomic_write(self.path) as f:
                 json.dump(document, f, indent=2)
@@ -503,6 +561,50 @@ class SqliteRepository(Repository):
                         "frequency, start_date, end_date, last_run) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         recurring_params,
+                    )
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            raise StorageError(f"could not save to {path}: {exc}") from exc
+
+    def load_budgets(self) -> list[Budget]:
+        path = self._path()
+        if not path.exists():
+            return []
+        try:
+            db.init_db(path)  # adds the budgets table to a database created before #27
+            conn = db.connect(path)
+            try:
+                rows = [
+                    {
+                        "category": r["category"],
+                        "month": r["month"],
+                        "limit": _from_cents(r["limit_cents"]),
+                        "currency": r["currency"],
+                    }
+                    for r in conn.execute("SELECT * FROM budgets ORDER BY month, category")
+                ]
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            raise StorageError(f"could not read {path}: {exc}") from exc
+        return _budgets_from_rows(rows, str(path))
+
+    def save_budgets(self, budgets: Sequence[Budget]) -> None:
+        path = self._path()
+        params = [
+            (b.category.value, b.month, _to_cents(b.limit), b.limit.currency) for b in budgets
+        ]
+        try:
+            db.init_db(path)
+            conn = db.connect(path)
+            try:
+                with conn:  # one transaction: all budgets are replaced or none
+                    conn.execute("DELETE FROM budgets")
+                    conn.executemany(
+                        "INSERT INTO budgets (category, month, limit_cents, currency) "
+                        "VALUES (?, ?, ?, ?)",
+                        params,
                     )
             finally:
                 conn.close()

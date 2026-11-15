@@ -17,6 +17,7 @@ import sys
 from collections.abc import Sequence
 
 from pft.domain.account import Account
+from pft.domain.budget import BUDGET_WARNING, Budget, level_percent
 from pft.domain.category import AccountType, Category, Kind
 from pft.domain.exceptions import (
     AccountNotFoundError,
@@ -28,6 +29,7 @@ from pft.domain.factory import TransactionFactory
 from pft.domain.money import Money
 from pft.domain.transaction import Transaction
 from pft.infrastructure.repository import Repository, SqliteRepository
+from pft.services.budget_monitor import BudgetMonitor, BudgetWarning
 from pft.services.filters import (
     Predicate,
     apply_filters,
@@ -79,6 +81,15 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--search", help="text in the note")
     listing.add_argument("--sort", default="date", help="date, amount or category (default: date)")
     listing.add_argument("--desc", action="store_true", help="largest or newest first")
+
+    budget = sub.add_parser("budget", help="set or list monthly budgets")
+    budget_sub = budget.add_subparsers(dest="budget_command", required=True, metavar="action")
+    set_budget = budget_sub.add_parser("set", help="set the limit for a category and month")
+    set_budget.add_argument("category", help="for example food")
+    set_budget.add_argument("limit", help="monthly limit, for example 200.00")
+    set_budget.add_argument("--month", help="YYYY-MM (default: this month)")
+    list_budgets = budget_sub.add_parser("list", help="show budgets with their usage")
+    list_budgets.add_argument("--month", help="YYYY-MM (default: this month)")
 
     balance = sub.add_parser("balance", help="show account balances and net worth")
     balance.add_argument("--account", help="account name or ID (default: all)")
@@ -197,6 +208,10 @@ def _cmd_add(repo: Repository, args: argparse.Namespace) -> None:
         args.note,
         transaction_id=ledger.next_transaction_id(),
     )
+    # The monitor is an Observer of the Ledger (#27). It only collects warnings; printing
+    # stays in this file, after the change was saved.
+    warnings: list[BudgetWarning] = []
+    ledger.subscribe(BudgetMonitor(ledger, repo.load_budgets(), warnings.append))
     ledger.add_transaction(account.id, transaction)
     repo.save(ledger)
     print(
@@ -205,6 +220,62 @@ def _cmd_add(repo: Repository, args: argparse.Namespace) -> None:
         f"on {transaction.date.isoformat()} in {account.name}. "
         f"Balance: {_money(str(account.balance.amount))}"
     )
+    for warning in warnings:
+        print(f"Warning: {warning.message}")
+
+
+def _this_month() -> str:
+    return dt.date.today().strftime("%Y-%m")
+
+
+def _cmd_budget_set(repo: Repository, args: argparse.Namespace) -> None:
+    try:
+        limit = Money.of(args.limit.strip().replace(",", "."))
+    except InvalidAmountError as exc:
+        raise InvalidAmountError(
+            f"invalid limit {args.limit!r}; enter a number like 200.00", field="limit"
+        ) from exc
+    budget = Budget(Category.from_text(args.category), args.month or _this_month(), limit)
+    others = [
+        b for b in repo.load_budgets() if (b.category, b.month) != (budget.category, budget.month)
+    ]
+    repo.save_budgets([*others, budget])
+    print(
+        f"Budget set: {budget.category.value} {budget.month}, "
+        f"limit {_money(str(budget.limit.amount))}"
+    )
+
+
+def _cmd_budget_list(repo: Repository, args: argparse.Namespace) -> None:
+    month = args.month or _this_month()
+    budgets = sorted(
+        (b for b in repo.load_budgets() if b.month == month), key=lambda b: b.category.value
+    )
+    if not budgets:
+        print(f"No budgets for {month}. Set one with: pft budget set food 200")
+        return
+    ledger = repo.load()
+    rows = []
+    for budget in budgets:
+        spent = budget.spent(ledger)
+        level = budget.level_reached(spent)
+        if level is None:
+            status = "ok"
+        else:
+            status = f"exceeded ({level_percent(level)}% reached)"
+            if level == BUDGET_WARNING:
+                status = f"warning ({level_percent(level)}% reached)"
+        rows.append(
+            [
+                budget.category.value,
+                _money(str(budget.limit.amount)),
+                _money(str(spent.amount)),
+                f"{int(budget.percent_of(spent))}%",
+                status,
+            ]
+        )
+    print(f"Budgets {month}")
+    _print_table(["CATEGORY", "LIMIT", "SPENT", "USED", "STATUS"], rows, right=(1, 2, 3))
 
 
 def _cmd_list(repo: Repository, args: argparse.Namespace) -> None:
@@ -309,6 +380,12 @@ def _run(args: argparse.Namespace) -> None:
             _cmd_add(repo, args)
         case "list":
             _cmd_list(repo, args)
+        case "budget":
+            match args.budget_command:
+                case "set":
+                    _cmd_budget_set(repo, args)
+                case "list":
+                    _cmd_budget_list(repo, args)
         case "balance":
             _cmd_balance(repo, args)
         case "report":
