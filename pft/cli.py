@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from pft.domain.account import Account
@@ -30,7 +30,7 @@ from pft.domain.exceptions import (
 from pft.domain.factory import TransactionFactory
 from pft.domain.money import Money
 from pft.domain.transaction import Transaction
-from pft.infrastructure.exporters import Exporter
+from pft.infrastructure.exporters import Exporter, ExportRow
 from pft.infrastructure.repository import Repository, SqliteRepository
 from pft.services.budget_monitor import BudgetMonitor, BudgetWarning
 from pft.services.filters import (
@@ -103,6 +103,13 @@ def build_parser() -> argparse.ArgumentParser:
         "monthly", help="income, expenses, savings rate, top categories"
     )
     monthly.add_argument("--month", help="YYYY-MM (default: this month)")
+    monthly.add_argument("period", nargs="?", help="YYYY-MM (alternative to --month)")
+    monthly.add_argument(
+        "--export", metavar="FORMAT", help="write using a registered export format"
+    )
+    monthly.add_argument(
+        "--out", help="destination filename (default: monthly-report-MONTH.FORMAT)"
+    )
 
     export = sub.add_parser("export", help="export stored data to a file")
     export_sub = export.add_subparsers(dest="export_type", required=True, metavar="type")
@@ -342,10 +349,42 @@ def _cmd_balance(repo: Repository, args: argparse.Namespace) -> None:
 
 
 def _cmd_report_monthly(repo: Repository, args: argparse.Namespace) -> None:
+    if args.period and args.month and args.period != args.month:
+        raise InvalidChoiceError(
+            "Use one month: the positional month and --month disagree.", field="month"
+        )
+    if args.out and not args.export:
+        raise InvalidChoiceError("--out requires --export FORMAT.", field="out")
     today = dt.date.today()
-    year, month = parse_month(args.month) if args.month else (today.year, today.month)
+    chosen = args.period or args.month
+    year, month = parse_month(chosen) if chosen else (today.year, today.month)
     data = MonthlySummary(repo.load(), year, month).build()
     totals, previous = data.totals, data.previous
+    if args.export:
+        period = f"{year:04d}-{month:02d}"
+        rows: list[dict[str, object]] = [
+            {"month": period, "section": "summary", "label": label, "value": value, "unit": unit}
+            for label, value, unit in (
+                ("income", totals.income, totals.income.currency),
+                ("expenses", totals.expenses, totals.expenses.currency),
+                ("net", totals.net, totals.net.currency),
+                ("savingsRate", totals.savings_rate, "%"),
+            )
+        ]
+        rows.extend(
+            {
+                "month": period,
+                "section": "category",
+                "label": item.category.value,
+                "value": item.total,
+                "unit": item.total.currency,
+            }
+            for item in data.categories
+        )
+        output = args.out or f"monthly-report-{period}.{args.export.strip().lower()}"
+        path = _export_file(rows, args.export, output)
+        print(f"Exported monthly report to {path}")
+        return
     print(f"Monthly summary {year}-{month:02d}")
     print(f"  Income:        {_money(str(totals.income.amount))}")
     print(f"  Expenses:      {_money(str(totals.expenses.amount))}")
@@ -368,17 +407,29 @@ def _cmd_report_monthly(repo: Repository, args: argparse.Namespace) -> None:
         )
 
 
-def _cmd_export_transactions(repo: Repository, args: argparse.Namespace) -> None:
-    """Registry lookup keeps CLI code independent of concrete formats (#32)."""
+def _export_file(rows: Iterable[ExportRow], fmt: str, output: str) -> Path:
+    """Shared registry lookup; no concrete exporter or format branching (#32)."""
     try:
-        exporter = Exporter.for_format(args.format)
+        exporter = Exporter.for_format(fmt)
     except ValueError as exc:
         raise InvalidChoiceError(str(exc), field="format") from exc
-    path = Path(args.out).expanduser().resolve()
     try:
-        exporter.export((transaction.to_row() for transaction in _transactions(repo.load())), path)
+        path = Path(output).expanduser().resolve()
+        exporter.export(rows, path)
     except OSError as exc:
-        raise StorageError(f"Could not write export to {path}: {exc.strerror or str(exc)}") from exc
+        raise StorageError(
+            f"Could not write export to {output}: {exc.strerror or str(exc)}"
+        ) from exc
+    except ValueError as exc:
+        raise StorageError(f"Could not create export: {exc}") from exc
+    return path
+
+
+def _cmd_export_transactions(repo: Repository, args: argparse.Namespace) -> None:
+    """Registry lookup keeps CLI code independent of concrete formats (#32)."""
+    path = _export_file(
+        (transaction.to_row() for transaction in _transactions(repo.load())), args.format, args.out
+    )
     print(f"Exported transactions to {path}")
 
 

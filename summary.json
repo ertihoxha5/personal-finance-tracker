@@ -1,0 +1,44 @@
+[
+  {
+    "month": "2026-11",
+    "section": "summary",
+    "label": "income",
+    "value": "2200.00",
+    "unit": "EUR"
+  },
+  {
+    "month": "2026-11",
+    "section": "summary",
+    "label": "expenses",
+    "value": "729.50",
+    "unit": "EUR"
+  },
+  {
+    "month": "2026-11",
+    "section": "summary",
+    "label": "net",
+    "value": "1470.50",
+    "unit": "EUR"
+  },
+  {
+    "month": "2026-11",
+    "section": "summary",
+    "label": "savingsRate",
+    "value": "66.8",
+    "unit": "%"
+  },
+  {
+    "month": "2026-11",
+    "section": "category",
+    "label": "other",
+    "value": "664.50",
+    "unit": "EUR"
+  },
+  {
+    "month": "2026-11",
+    "section": "category",
+    "label": "food",
+    "value": "65.00",
+    "unit": "EUR"
+  }
+]

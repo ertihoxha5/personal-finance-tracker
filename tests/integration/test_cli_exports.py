@@ -99,3 +99,74 @@ def test_empty_repository_still_creates_loadable_json(
     output = tmp_path / "empty.json"
     assert main(["export", "transactions", "--format", "json", "--out", str(output)]) == 0
     assert json.loads(output.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize("fmt", ["csv", "json", "md"])
+def test_monthly_export_supports_every_format(
+    database: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], fmt: str
+) -> None:
+    output = tmp_path / f"monthly.{fmt}"
+    assert main(["report", "monthly", "2026-11", "--export", fmt, "--out", str(output)]) == 0
+    assert str(output.resolve()) in capsys.readouterr().out
+    if fmt == "json":
+        rows = json.loads(output.read_text(encoding="utf-8"))
+        assert all(row["month"] == "2026-11" for row in rows)
+        assert all(isinstance(row["value"], str) for row in rows)
+        summary = {row["label"]: row["value"] for row in rows if row["section"] == "summary"}
+        assert summary == {
+            "income": "2200.00",
+            "expenses": "664.50",
+            "net": "1535.50",
+            "savingsRate": "69.8",
+        }
+    elif fmt == "csv":
+        with output.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+        assert rows[0]["label"] == "income"
+        assert all(row["month"] == "2026-11" for row in rows)
+    else:
+        assert "| month | section | label | value | unit |" in output.read_text(encoding="utf-8")
+
+
+def test_monthly_export_uses_default_path_and_existing_month_option(
+    database: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert main(["report", "monthly", "--month", "2026-11", "--export", "json"]) == 0
+    assert json.loads((tmp_path / "monthly-report-2026-11.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    "args, message",
+    [
+        (["2026-11", "--month", "2026-10"], "disagree"),
+        (["2026-11", "--out", "report.txt"], "requires --export"),
+        (["2026-11", "--export", "unknown"], "known formats"),
+        (["0000-01", "--export", "json"], "year"),
+    ],
+)
+def test_monthly_export_errors_are_friendly(
+    database: Path, capsys: pytest.CaptureFixture[str], args: list[str], message: str
+) -> None:
+    assert main(["report", "monthly", *args]) == 1
+    captured = capsys.readouterr()
+    assert message in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+def test_empty_month_export_has_zero_summary_rows(database: Path, tmp_path: Path) -> None:
+    output = tmp_path / "empty-month.json"
+    assert main(["report", "monthly", "2020-01", "--export", "json", "--out", str(output)]) == 0
+    rows = json.loads(output.read_text(encoding="utf-8"))
+    assert len(rows) == 4
+    assert [row["value"] for row in rows] == ["0.00", "0.00", "0.00", "0.0"]
+
+
+def test_negative_monthly_net_remains_a_numeric_csv_value(database: Path, tmp_path: Path) -> None:
+    assert main(["add", "expense", "40", "food", "--account", "1", "--date", "2020-01-15"]) == 0
+    output = tmp_path / "negative.csv"
+    assert main(["report", "monthly", "2020-01", "--export", "csv", "--out", str(output)]) == 0
+    with output.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert next(row["value"] for row in rows if row["label"] == "net") == "-40.00"

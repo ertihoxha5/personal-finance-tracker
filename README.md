@@ -141,3 +141,20 @@ same file again creates duplicates, so inspect the preview before confirming.
 
 Design notes and the live UI checklist are in
 [task-28-optional-features.md](docs/defense/task-28-optional-features.md).
+
+## CLI exports (#32)
+
+Export stored transactions or a monthly report in any registered format:
+
+```powershell
+.venv\Scripts\python.exe -m pft export transactions --format csv --out transactions.csv
+.venv\Scripts\python.exe -m pft export transactions --format json --out transactions.json
+.venv\Scripts\python.exe -m pft export transactions --format md --out transactions.md
+.venv\Scripts\python.exe -m pft report monthly 2026-11 --export csv
+.venv\Scripts\python.exe -m pft report monthly --month 2026-11 --export json --out summary.json
+```
+
+Every successful export prints the absolute output path. Monthly exports default
+to `monthly-report-MONTH.FORMAT` in the current directory; use `--out` to choose
+another path. Without `--export`, the monthly report prints to the terminal as
+before. The parent output directory must already exist.

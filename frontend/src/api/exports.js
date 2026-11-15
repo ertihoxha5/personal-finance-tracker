@@ -66,7 +66,8 @@ export async function requestExport(payload, format, { signal, fetchImpl = globa
       throw new Error('The export endpoint is unavailable. Restart the backend and try again.')
     }
     const body = await response.json().catch(() => ({}))
-    const message = typeof body.detail === 'string' ? body.detail : 'The export could not be downloaded. Check the export settings and try again.'
+    const message = typeof body.message === 'string' ? body.message
+      : typeof body.detail === 'string' ? body.detail : 'The export could not be downloaded. Check the export settings and try again.'
     throw new Error(message)
   }
   const mediaType = { csv: 'text/csv', json: 'application/json', md: 'text/markdown' }[format]
