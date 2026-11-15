@@ -8,7 +8,7 @@ not persisted: restoring a repository starts a new session.
 from __future__ import annotations
 
 import datetime as dt
-from copy import deepcopy
+from copy import copy, deepcopy
 from typing import Protocol
 
 from pft.domain.exceptions import FinanceError, InvalidTransferError, TransactionNotFoundError
@@ -24,6 +24,8 @@ class CommandError(FinanceError):
 
 
 class Command(Protocol):
+    ledger: Ledger
+
     def execute(self) -> None: ...
 
     def undo(self) -> None: ...
@@ -176,6 +178,16 @@ class History:
     @property
     def can_redo(self) -> bool:
         return bool(self._redo)
+
+    def fork(self, ledger: Ledger) -> History:
+        """Stage history on a fresh ledger; publish it only after persistence succeeds."""
+        result = History()
+        for source, target in ((self._undo, result._undo), (self._redo, result._redo)):
+            for command in source:
+                staged = copy(command)
+                staged.ledger = ledger
+                target.append(staged)
+        return result
 
     def execute(self, command: Command) -> None:
         command.execute()

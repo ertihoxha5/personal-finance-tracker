@@ -95,6 +95,56 @@ destination. Tests verify PNG signatures, dimensions/decoding, plotted report
 values, legend text, empty data, dependency errors and failed writes. Synthetic
 pie and trend outputs were visually inspected for legibility and clipping.
 
+## Part 4: optional API integration
+
+The separate `pft/api/optional.py` router is mounted under `/api/optional`.
+Core account, transaction, budget and repository operations remain unchanged.
+All optional endpoints are disabled by default. Enable approved tools before
+starting the backend in PowerShell:
+
+```powershell
+$env:PFT_OPTIONAL_FEATURES = 'undo,import,charts'
+.venv\Scripts\python.exe -m pft serve
+```
+
+`GET /features` reports which tools are enabled. Features can be enabled
+individually by using a comma-separated subset; disabled endpoints return 404.
+
+### History
+
+`POST /history` starts a token-scoped tools session; `GET /history/{token}`
+returns can_undo/can_redo and clears history if outside changes are detected.
+`POST /history/{token}` accepts add, delete, transfer, undo or redo actions.
+Only actions made through this session are undoable. Tokens expire after an
+hour of inactivity and the process keeps at most 64 sessions per store.
+
+History.fork binds copied commands to the freshly loaded ledger. The API stages
+changes through LedgerStore.write, then publishes the new history only after
+save succeeds. Failed saves therefore preserve both persisted data and the
+previous stacks. A fingerprint of accounts, transactions, recurring rules,
+budgets and ID counters rejects operations based on outside changes. Changes
+from another tools session also invalidate a stale session. This follows the
+existing single-process API assumption; it is not a multi-worker history store.
+
+### Imports and charts
+
+`POST /import/preview` accepts account_id and csv_text and returns accepted rows,
+errors and a revision. `POST /import/confirm` requires expected_revision and
+revalidates the raw CSV inside the locked store write. Outside changes require a
+new preview. A successful import changes the revision, preventing accidental
+replay with the same preview. Repository failure leaves the preview retryable.
+The JSON CSV text is capped at one million characters, in addition to the
+importer's row limit. BudgetMonitor supplies warnings for accepted expenses.
+
+`GET /charts/categories?start=YYYY-MM-DD&end=YYYY-MM-DD` and
+`GET /charts/trend?end=YYYY-MM&months=6` return PNG attachments. Reports are
+collected from the store before rendering; temporary files are discarded.
+Missing matplotlib produces 503 with an installation message.
+
+API tests use temporary SQLite databases and synthetic data. They cover feature
+gates, persistence, save failures, stale sessions, paired transfers, import
+confirmation/replay prevention, chart downloads and invalid inputs.
+
 ## Remaining parts
 
-- Optional API/React integration, feature gates and UI acceptance checks.
+- Optional React tools page, feature gates and UI acceptance checks.
