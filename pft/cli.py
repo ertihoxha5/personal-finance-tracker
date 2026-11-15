@@ -15,6 +15,7 @@ import argparse
 import datetime as dt
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from pft.domain.account import Account
 from pft.domain.budget import BUDGET_WARNING, Budget, level_percent
@@ -24,10 +25,12 @@ from pft.domain.exceptions import (
     FinanceError,
     InvalidAmountError,
     InvalidChoiceError,
+    StorageError,
 )
 from pft.domain.factory import TransactionFactory
 from pft.domain.money import Money
 from pft.domain.transaction import Transaction
+from pft.infrastructure.exporters import Exporter
 from pft.infrastructure.repository import Repository, SqliteRepository
 from pft.services.budget_monitor import BudgetMonitor, BudgetWarning
 from pft.services.filters import (
@@ -100,6 +103,12 @@ def build_parser() -> argparse.ArgumentParser:
         "monthly", help="income, expenses, savings rate, top categories"
     )
     monthly.add_argument("--month", help="YYYY-MM (default: this month)")
+
+    export = sub.add_parser("export", help="export stored data to a file")
+    export_sub = export.add_subparsers(dest="export_type", required=True, metavar="type")
+    transactions = export_sub.add_parser("transactions", help="export all stored transactions")
+    transactions.add_argument("--format", required=True, help="registered export format")
+    transactions.add_argument("--out", required=True, help="destination filename")
     return parser
 
 
@@ -359,6 +368,20 @@ def _cmd_report_monthly(repo: Repository, args: argparse.Namespace) -> None:
         )
 
 
+def _cmd_export_transactions(repo: Repository, args: argparse.Namespace) -> None:
+    """Registry lookup keeps CLI code independent of concrete formats (#32)."""
+    try:
+        exporter = Exporter.for_format(args.format)
+    except ValueError as exc:
+        raise InvalidChoiceError(str(exc), field="format") from exc
+    path = Path(args.out).expanduser().resolve()
+    try:
+        exporter.export((transaction.to_row() for transaction in _transactions(repo.load())), path)
+    except OSError as exc:
+        raise StorageError(f"Could not write export to {path}: {exc.strerror or str(exc)}") from exc
+    print(f"Exported transactions to {path}")
+
+
 def _run(args: argparse.Namespace) -> None:
     repo = SqliteRepository()
     match args.command:
@@ -392,6 +415,10 @@ def _run(args: argparse.Namespace) -> None:
             match args.report_type:
                 case "monthly":
                     _cmd_report_monthly(repo, args)
+        case "export":
+            match args.export_type:
+                case "transactions":
+                    _cmd_export_transactions(repo, args)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
