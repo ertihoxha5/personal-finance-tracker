@@ -69,7 +69,32 @@ Importer tests cover mixed valid/invalid input, precise amounts, CSV escaping,
 BOM/Unicode, previews, currencies, schema errors, malformed quoting and limits.
 API/React preview and confirmation are planned for a later integration part.
 
+## Part 3: PNG charts
+
+`pft/infrastructure/charts.py` adds `save_category_pie(report, path)` and
+`save_monthly_trend(report, path)`. They consume CategoryReportData and
+TrendReportData; they do not recalculate financial totals or change the Ledger.
+Only plotting coordinates use floats. Labels use the exact report values.
+
+Install with `.venv\Scripts\python.exe -m pip install -e ".[charts]"`.
+Matplotlib is a separate optional extra and is loaded only on a render request.
+The CI backend installs both dev and charts extras so chart tests actually run.
+Without matplotlib, core imports still work and a chart request raises the
+friendly ChartUnavailableError. Rendering tests skip without the extra; the
+missing-dependency behavior test still runs.
+
+The headless Agg canvas creates PNGs without opening windows or changing the
+global pyplot backend. A rendering lock protects matplotlib's shared caches.
+Images are 1200 x 720 with a category amount/percentage legend or distinct line
+styles for income, expenses and net. Months with no data remain zero. An empty
+category report produces an explanatory image rather than failing.
+
+PNG output is written to a sibling temporary file and atomically replaced after
+successful rendering; failures clean the temporary file and preserve an existing
+destination. Tests verify PNG signatures, dimensions/decoding, plotted report
+values, legend text, empty data, dependency errors and failed writes. Synthetic
+pie and trend outputs were visually inspected for legibility and clipping.
+
 ## Remaining parts
 
-- Category pie and monthly trend PNG generation using matplotlib.
 - Optional API/React integration, feature gates and UI acceptance checks.
