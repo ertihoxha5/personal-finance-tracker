@@ -1,0 +1,11 @@
+.optional-tools { display: grid; gap: 1rem; min-width: 0; }
+.optional-tool { min-width: 0; }
+.optional-tool fieldset { margin: 1rem 0; min-width: 0; }
+.optional-tool .field { margin-bottom: 0.75rem; }
+.optional-tool textarea, .optional-tool .field > select, .optional-tool .field > input {
+  box-sizing: border-box; width: 100%; max-width: 100%; padding: 0.5rem;
+  font: inherit; border: 1px solid #9aa5b1; border-radius: 6px;
+}
+.optional-tool textarea { font-family: monospace; resize: vertical; }
+.optional-tool .table-scroll { max-height: 28rem; overflow: auto; margin-top: 1rem; }
+.optional-tool .button-row { flex-wrap: wrap; }

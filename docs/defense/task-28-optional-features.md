@@ -21,9 +21,9 @@ transfer leg captures both rows; undo validates both target accounts and IDs
 before restoring. Undo refuses to remove records that changed outside history.
 Redo of a transfer checks the current source balance again.
 
-History is session-local and not yet connected to API/React. It is not persisted
-across restarts. Future integration must commit history only when repository
-saving succeeds and must invalidate history after mutations outside the optional
+History is session-local and connected to the optional API/React workflow below.
+It is not persisted across restarts. The integration commits history only when
+repository saving succeeds and invalidates it after mutations outside the optional
 workflow. Budget warning behavior remains the responsibility of BudgetMonitor;
 this part does not change the previously reviewed warning behavior.
 
@@ -67,7 +67,7 @@ date,amount,category,note
 
 Importer tests cover mixed valid/invalid input, precise amounts, CSV escaping,
 BOM/Unicode, previews, currencies, schema errors, malformed quoting and limits.
-API/React preview and confirmation are planned for a later integration part.
+API/React preview and confirmation are described in parts 4 and 5 below.
 
 ## Part 3: PNG charts
 
@@ -145,6 +145,58 @@ API tests use temporary SQLite databases and synthetic data. They cover feature
 gates, persistence, save failures, stale sessions, paired transfers, import
 confirmation/replay prevention, chart downloads and invalid inputs.
 
-## Remaining parts
+## Part 5: optional React workspace
 
-- Optional React tools page, feature gates and UI acceptance checks.
+`/tools` contains separate panels for HistoryTools, ImportTools and ChartTools.
+The sidebar shows its link only when `/api/optional/features` enables a selected
+feature. Panels also check their individual capability, and the backend gates
+every operation. Visiting the URL while disabled shows a friendly disabled state.
+Account lists and existing validation forms are reused; core screens retain their
+existing operations and do not acquire undo/redo behavior implicitly.
+
+History starts only on an explicit button click. Add, transfer, confirmed delete,
+undo and redo call the token-scoped API. The panel refreshes its transaction list
+and account data after a saved operation. Failed actions remain visible and offer
+refresh/new-session recovery. Linked transfer deletion is explained in confirmation.
+
+CSV input accepts a UTF-8 file or pasted text. Account/text changes invalidate
+preview immediately, and pending operations disable controls. Accepted and rejected
+rows are shown in accessible tables (first 100 of each, with full counts). Only a
+matching preview with accepted rows enables confirmation. After a successful import,
+confirmation is disabled until another preview. The duplicate-file limitation is
+visible. Backend warnings are displayed after imports/history operations.
+
+PNG forms use inclusive dates for category charts and an ending month/count for
+trends. Download names identify the selected range. The client checks image/png,
+reports dependency/server errors, and prevents duplicate pending downloads.
+
+Added frontend API contract tests and component interaction checks with jsdom and
+React Testing Library. Components are compiled with the project's esbuild; tests
+interact with the actual controls using mocked HTTP responses. They verify feature
+gating, matching previews, changed text, row errors, confirmation outcomes, history
+reset state and PNG filter/filename selection. CI now runs frontend tests as well
+as lint/build. These checks do not claim a live Chrome/Firefox browser walkthrough.
+
+## Live UI acceptance checklist
+
+Start the backend in your own terminal with the environment variable in part 4,
+then start the frontend with `npm run dev` in `frontend`. Open `/tools` via the
+Optional tools sidebar link.
+
+1. Start a history session. Add a synthetic expense, undo it and redo it. Verify
+   both the transaction list and the Accounts balance after visiting Accounts.
+2. From tools transfer between two synthetic accounts, undo/redo, then delete one
+   transfer leg with confirmation. Undo and verify both linked rows return.
+3. Change a record on a core screen, return to tools and refresh history. Check
+   that history is cleared and stale actions cannot overwrite the external change.
+4. Preview the example CSV with an additional invalid-date row. Verify its row
+   number/reason, no changes before confirmation and only valid rows after it.
+   Editing text or changing the account must disable confirmation until preview.
+5. Download both PNG charts. Confirm the selected period matches their labels and
+   check an empty category period produces the explanatory image.
+6. Restart the backend without PFT_OPTIONAL_FEATURES. Core pages must work, the
+   tools navigation must disappear and direct optional endpoints must return 404.
+
+All five implementation parts are complete. Live browser acceptance remains a
+manual check; automated component/API tests and generated-image inspection cover
+the implemented behavior without modifying the user's running backend.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { fetchOptionalFeatures, optionalEnabled } from '../api/optional.js'
 
 const LINKS = [
   { to: '/', label: 'Dashboard', end: true },
@@ -10,6 +11,13 @@ const LINKS = [
 
 export default function Layout() {
   const [apiStatus, setApiStatus] = useState('checking')
+  const [showTools, setShowTools] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    fetchOptionalFeatures().then((features) => { if (active) setShowTools(optionalEnabled(features)) }).catch(() => {})
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     fetch('/api/health')
@@ -28,6 +36,7 @@ export default function Layout() {
               {label}
             </NavLink>
           ))}
+          {showTools && <NavLink to="/tools" className="nav-link">Optional tools</NavLink>}
         </nav>
         <p className={`api-status api-${apiStatus}`}>API: {apiStatus}</p>
       </aside>

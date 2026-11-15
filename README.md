@@ -111,3 +111,33 @@ anything the operating system's user account doesn't already protect.
 committed in a transaction, so it survives closing the app, restarting the server or
 rebooting the machine. SQLite needs no separate database server, and backing up or
 resetting the data means copying or deleting that one file.
+
+## Optional tools (#28)
+
+The normal application does not require optional tools. To enable all three in
+PowerShell, install the chart extra and set the feature list **before** starting
+the backend:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -e ".[charts]"
+$env:PFT_OPTIONAL_FEATURES = 'undo,import,charts'
+.venv\Scripts\python.exe -m pft serve
+```
+
+Start the frontend as usual (`npm run dev` from `frontend`) and open **Optional
+tools** in the sidebar. A subset such as `'import,charts'` enables only those
+panels. To disable the tools, remove the variable before restarting the backend:
+
+```powershell
+Remove-Item Env:PFT_OPTIONAL_FEATURES -ErrorAction SilentlyContinue
+```
+
+The workspace provides session-based undo/redo, bank CSV preview/confirmation and
+PNG chart downloads. Only actions made in its history workspace are undoable;
+outside changes invalidate history. CSV columns are `date,amount,category` with
+optional `note,currency`. Negative amounts are expenses and positive amounts are
+income. Preview lists rejected rows before valid rows are saved. Importing the
+same file again creates duplicates, so inspect the preview before confirming.
+
+Design notes and the live UI checklist are in
+[task-28-optional-features.md](docs/defense/task-28-optional-features.md).
