@@ -69,6 +69,15 @@ CREATE TABLE IF NOT EXISTS budgets (
     currency TEXT NOT NULL DEFAULT 'EUR',
     PRIMARY KEY (category, month)
 );
+
+-- Budget warnings already sent (#27): level is 80 or 100. Kept so that deleting and
+-- re-adding an expense cannot send the same warning twice.
+CREATE TABLE IF NOT EXISTS budget_warnings (
+    category TEXT NOT NULL,
+    month TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    PRIMARY KEY (category, month, level)
+);
 """
 
 # Task #5 created accounts without type/currency and transactions with a signed amount and a

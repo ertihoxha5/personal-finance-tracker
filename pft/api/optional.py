@@ -29,7 +29,7 @@ from pft.api.store import LedgerStore, get_store
 from pft.domain.factory import TransactionFactory
 from pft.domain.transaction import Transaction
 from pft.infrastructure.importer import BankCsvImporter, ImportResult
-from pft.services.budget_monitor import BudgetMonitor, BudgetWarning
+from pft.services.budget_monitor import BudgetWarning
 from pft.services.commands import AddCommand, CommandError, DeleteCommand, History, TransferCommand
 from pft.services.ledger import Ledger
 from pft.services.reports import CategoryReport, TrendReport, parse_month
@@ -160,7 +160,7 @@ def change_history(token: str, body: HistoryAction, store: Store) -> dict[str, A
                     "Data changed outside this tools session. Refresh its history first."
                 )
             history = session.history.fork(ledger)
-            ledger.subscribe(BudgetMonitor(ledger, store.budgets(), warnings.append))
+            ledger.subscribe(store.budget_monitor(ledger, warnings.append))
             if body.action == "add" and body.transaction is not None:
                 item = body.transaction
                 row = TransactionFactory.from_input(
@@ -254,7 +254,7 @@ def confirm_import(body: ImportRequest, store: Store) -> dict[str, Any]:
                 "Data changed or preview is missing. Preview the CSV again before importing."
             )
         warnings: list[BudgetWarning] = []
-        ledger.subscribe(BudgetMonitor(ledger, store.budgets(), warnings.append))
+        ledger.subscribe(store.budget_monitor(ledger, warnings.append))
         result = BankCsvImporter().import_stream(
             ledger, io.StringIO(body.csv_text), body.account_id
         )

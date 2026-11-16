@@ -14,8 +14,13 @@ A level is reported once per budget (category and month):
   before this expense and is at or above it after. A later expense above 80% crosses
   nothing, so it is silent. This needs no saved state, so it also holds after a restart,
   when a new monitor is created.
-- The monitor also remembers what it sent, so removing an expense and adding it again in
-  the same session does not repeat a warning.
+- The monitor also remembers what it sent (``sent``), so removing the crossing expense and
+  adding it again does not repeat a warning. That memory is **saved**: whoever creates the
+  monitor passes in the stored history and saves ``monitor.sent`` afterwards (the API does it
+  in ``LedgerStore``, the CLI after saving the Ledger). Without that, a new monitor, which
+  the API builds for every request, would have forgotten and warned a second time.
+- The history of a budget is forgotten when the budget is removed or its limit changes
+  (``forget_changed``): 80% of a new limit is a different amount, so it is a new warning.
 
 One expense that jumps from under 80% straight past 100% sends only the 100% warning.
 """
@@ -26,7 +31,13 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from pft.domain.budget import BUDGET_LEVELS, Budget, HasTransactions, level_percent
+from pft.domain.budget import (
+    BUDGET_LEVELS,
+    Budget,
+    HasTransactions,
+    SentWarning,
+    level_percent,
+)
 from pft.domain.category import Category
 from pft.domain.transaction import Expense
 from pft.services.ledger import LedgerEvent, TransactionAdded
@@ -64,12 +75,24 @@ class BudgetMonitor:
     """An Observer of the Ledger that turns new expenses into budget warnings."""
 
     def __init__(
-        self, ledger: HasTransactions, budgets: Iterable[Budget], on_warning: WarningCallback
+        self,
+        ledger: HasTransactions,
+        budgets: Iterable[Budget],
+        on_warning: WarningCallback,
+        sent: Iterable[SentWarning] = (),
     ) -> None:
         self._ledger = ledger
         self._budgets = list(budgets)
         self._on_warning = on_warning
-        self._sent: set[tuple[Category, str, Decimal]] = set()
+        self._sent: set[SentWarning] = set(sent)
+
+    @property
+    def sent(self) -> frozenset[SentWarning]:
+        """Every level already reported: the history passed in plus what this monitor sent.
+
+        Save it after the change is stored and pass it to the next monitor.
+        """
+        return frozenset(self._sent)
 
     def update(self, event: LedgerEvent) -> None:
         """Called by the Ledger after every change; only a new expense can cause a warning."""
@@ -93,13 +116,31 @@ class BudgetMonitor:
         if not crossed:
             return
         top = crossed[0]  # BUDGET_LEVELS is highest first
-        already_sent = (budget.category, budget.month, top) in self._sent
+        already_sent = SentWarning(budget.category, budget.month, top) in self._sent
         # Reaching a level also covers the lower ones, so they are never sent afterwards.
-        self._sent.update((budget.category, budget.month, level) for level in crossed)
+        self._sent.update(SentWarning(budget.category, budget.month, level) for level in crossed)
         if not already_sent:
             self._on_warning(
                 BudgetWarning(budget.category, budget.month, top, budget.percent_of(after))
             )
 
 
-__all__ = ["BudgetMonitor", "BudgetWarning", "WarningCallback"]
+def forget_changed(
+    sent: Iterable[SentWarning], before: Iterable[Budget], after: Iterable[Budget]
+) -> set[SentWarning]:
+    """``sent`` without the records of budgets that were removed or got another limit.
+
+    A budget that is unchanged keeps its history, so saving the same limit again does not
+    bring an old warning back.
+    """
+    limits_before = {(b.category, b.month): b.limit for b in before}
+    limits_after = {(b.category, b.month): b.limit for b in after}
+    kept: set[SentWarning] = set()
+    for record in sent:
+        key = (record.category, record.month)
+        if key not in limits_before or limits_before[key] == limits_after.get(key):
+            kept.add(record)
+    return kept
+
+
+__all__ = ["BudgetMonitor", "BudgetWarning", "WarningCallback", "forget_changed"]

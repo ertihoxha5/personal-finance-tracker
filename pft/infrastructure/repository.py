@@ -24,6 +24,9 @@ and a recurring table in SQLite (same database transaction as everything else).
 Budgets (#27) are stored next to the Ledger, not inside it, because the Ledger does not know
 about budgets: ``load_budgets()`` / ``save_budgets()`` read and write budgets.csv, the
 "budgets" list in JSON, or the budgets table in SQLite. Saving the Ledger never touches them.
+The warnings already sent are stored the same way (``load_sent_warnings()`` /
+``save_sent_warnings()``: budget_warnings.csv, a "budget_warnings" list, a budget_warnings
+table), so a warning is not repeated after a restart.
 """
 
 from __future__ import annotations
@@ -33,14 +36,14 @@ import json
 import os
 import sqlite3
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, TextIO
 
 from pft.domain.account import Account
-from pft.domain.budget import Budget
+from pft.domain.budget import Budget, SentWarning
 from pft.domain.category import AccountType
 from pft.domain.exceptions import DataImportError, FinanceError, StorageError
 from pft.domain.factory import TransactionFactory
@@ -63,6 +66,7 @@ RECURRING_COLUMNS: tuple[str, ...] = (
     "end_date",
     "last_run",
 )
+SENT_WARNING_COLUMNS: tuple[str, ...] = ("category", "month", "level")
 COUNTER_COLUMNS: tuple[str, ...] = ("name", "value")
 ACCOUNT_COUNTER = "next_account_id"
 TRANSACTION_COUNTER = "next_transaction_id"
@@ -107,6 +111,14 @@ class Repository(ABC):
     @abstractmethod
     def save_budgets(self, budgets: Sequence[Budget]) -> None:
         """Replace the stored budgets. The Ledger's own data is not touched."""
+
+    @abstractmethod
+    def load_sent_warnings(self) -> set[SentWarning]:
+        """Return the budget warnings that were already sent (#27); empty when none."""
+
+    @abstractmethod
+    def save_sent_warnings(self, sent: Iterable[SentWarning]) -> None:
+        """Replace the stored record of sent budget warnings."""
 
 
 # --- shared helpers ---------------------------------------------------------------------
@@ -156,6 +168,23 @@ def _budgets_from_rows(rows: Sequence[Mapping[str, Any]], source: str) -> list[B
                 f"{source}, budget {number}: {exc.message}", field=exc.field
             ) from exc
     return budgets
+
+
+def _sent_rows(sent: Iterable[SentWarning]) -> list[dict[str, str]]:
+    """Rows in a fixed order, so saving the same history always writes the same file."""
+    return [s.to_row() for s in sorted(sent, key=lambda s: (s.month, s.category.value, s.level))]
+
+
+def _sent_from_rows(rows: Sequence[Mapping[str, Any]], source: str) -> set[SentWarning]:
+    sent: set[SentWarning] = set()
+    for number, row in enumerate(rows, start=1):
+        try:
+            sent.add(SentWarning.from_row(row))
+        except FinanceError as exc:
+            raise DataImportError(
+                f"{source}, budget warning {number}: {exc.message}", field=exc.field
+            ) from exc
+    return sent
 
 
 def _account_from_row(row: Mapping[str, Any]) -> Account:
@@ -274,6 +303,18 @@ class CsvRepository(Repository):
         except OSError as exc:
             raise StorageError(f"could not save to {self.folder}: {exc}") from exc
 
+    def load_sent_warnings(self) -> set[SentWarning]:
+        self._recover()
+        rows = self._read("budget_warnings.csv", SENT_WARNING_COLUMNS)
+        return _sent_from_rows(rows, str(self.folder / "budget_warnings.csv"))
+
+    def save_sent_warnings(self, sent: Iterable[SentWarning]) -> None:
+        try:
+            self._recover()
+            self._swap_in({"budget_warnings.csv": (SENT_WARNING_COLUMNS, _sent_rows(sent))})
+        except OSError as exc:
+            raise StorageError(f"could not save to {self.folder}: {exc}") from exc
+
     def _swap_in(self, files: dict[str, tuple[tuple[str, ...], list[dict[str, str]]]]) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
         staged: list[Path] = []
@@ -368,6 +409,7 @@ class JsonRepository(Repository):
                 "accounts": _account_rows(ledger),
                 "transactions": _transaction_rows(ledger),
                 "budgets": previous.get("budgets", []),
+                "budget_warnings": previous.get("budget_warnings", []),
                 "recurring": _recurring_rows(ledger),
                 "counters": _counters(ledger),
             }
@@ -380,14 +422,27 @@ class JsonRepository(Repository):
         return _budgets_from_rows(rows, str(self.path))
 
     def save_budgets(self, budgets: Sequence[Budget]) -> None:
-        document = self._read()  # keep the Ledger's data exactly as it is stored
+        self._write_key("budgets", [b.to_row() for b in budgets])
+
+    def load_sent_warnings(self) -> set[SentWarning]:
+        rows = self._read().get("budget_warnings", [])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise DataImportError(f'{self.path}: "budget_warnings" must be a list of objects')
+        return _sent_from_rows(rows, str(self.path))
+
+    def save_sent_warnings(self, sent: Iterable[SentWarning]) -> None:
+        self._write_key("budget_warnings", _sent_rows(sent))
+
+    def _write_key(self, key: str, rows: list[dict[str, str]]) -> None:
+        """Replace one list in the file; the Ledger's data stays exactly as it is stored."""
+        document = self._read()
         empty: dict[str, Any] = {
             "version": JSON_VERSION,
             "accounts": [],
             "transactions": [],
             "recurring": [],
         }
-        self._write({**empty, **document, "budgets": [b.to_row() for b in budgets]})
+        self._write({**empty, **document, key: rows})
 
     def _write(self, document: dict[str, Any]) -> None:
         try:
@@ -604,6 +659,39 @@ class SqliteRepository(Repository):
                     conn.executemany(
                         "INSERT INTO budgets (category, month, limit_cents, currency) "
                         "VALUES (?, ?, ?, ?)",
+                        params,
+                    )
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            raise StorageError(f"could not save to {path}: {exc}") from exc
+
+    def load_sent_warnings(self) -> set[SentWarning]:
+        path = self._path()
+        if not path.exists():
+            return set()
+        try:
+            db.init_db(path)  # adds the table to a database created before this fix
+            conn = db.connect(path)
+            try:
+                rows = [dict(r) for r in conn.execute("SELECT * FROM budget_warnings")]
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            raise StorageError(f"could not read {path}: {exc}") from exc
+        return _sent_from_rows(rows, str(path))
+
+    def save_sent_warnings(self, sent: Iterable[SentWarning]) -> None:
+        path = self._path()
+        params = [(r["category"], r["month"], int(r["level"])) for r in _sent_rows(sent)]
+        try:
+            db.init_db(path)
+            conn = db.connect(path)
+            try:
+                with conn:  # one transaction: the whole history is replaced or none of it
+                    conn.execute("DELETE FROM budget_warnings")
+                    conn.executemany(
+                        "INSERT INTO budget_warnings (category, month, level) VALUES (?, ?, ?)",
                         params,
                     )
             finally:

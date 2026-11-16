@@ -35,7 +35,7 @@ from enum import StrEnum
 from itertools import islice
 from typing import Generic, TypeVar
 
-from pft.domain.budget import BUDGET_EXCEEDED, BUDGET_WARNING, Budget
+from pft.domain.budget import BUDGET_EXCEEDED, BUDGET_WARNING, MAX_YEAR, MIN_YEAR, Budget
 from pft.domain.category import Category, Kind
 from pft.domain.exceptions import InvalidDateError
 from pft.domain.money import Money
@@ -46,10 +46,6 @@ from pft.services.ledger import Ledger
 TOP_CATEGORY_COUNT = 3
 _MONTH = re.compile(r"(\d{4})-(0[1-9]|1[0-2])")
 _ONE_DECIMAL = Decimal("0.1")
-# The months a report accepts. Reports also look at the month before and the one after, and
-# the dashboard five months back; a year near 0001 or 9999 would make those dates impossible.
-MIN_YEAR = 1900
-MAX_YEAR = 9998
 MAX_TREND_MONTHS = 120  # ten years is more than any chart or table needs
 _TENTHS_IN_WHOLE = 1000  # 100.0 percent, counted in steps of 0.1
 
@@ -453,6 +449,8 @@ def _totals(rows: list[Transaction]) -> PeriodTotals:
 
 __all__ = [
     "MAX_TREND_MONTHS",
+    "MAX_YEAR",
+    "MIN_YEAR",
     "BudgetLine",
     "BudgetReport",
     "BudgetReportData",

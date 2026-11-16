@@ -32,7 +32,7 @@ from pft.domain.money import Money
 from pft.domain.transaction import Transaction
 from pft.infrastructure.exporters import Exporter, ExportRow
 from pft.infrastructure.repository import Repository, SqliteRepository
-from pft.services.budget_monitor import BudgetMonitor, BudgetWarning
+from pft.services.budget_monitor import BudgetMonitor, BudgetWarning, forget_changed
 from pft.services.filters import (
     Predicate,
     apply_filters,
@@ -225,11 +225,16 @@ def _cmd_add(repo: Repository, args: argparse.Namespace) -> None:
         transaction_id=ledger.next_transaction_id(),
     )
     # The monitor is an Observer of the Ledger (#27). It only collects warnings; printing
-    # stays in this file, after the change was saved.
+    # stays in this file, after the change was saved. It starts with the warnings sent by
+    # earlier runs, and what it sends now is saved, so no warning is printed twice.
     warnings: list[BudgetWarning] = []
-    ledger.subscribe(BudgetMonitor(ledger, repo.load_budgets(), warnings.append))
+    already_sent = repo.load_sent_warnings()
+    monitor = BudgetMonitor(ledger, repo.load_budgets(), warnings.append, already_sent)
+    ledger.subscribe(monitor)
     ledger.add_transaction(account.id, transaction)
     repo.save(ledger)
+    if monitor.sent != already_sent:
+        repo.save_sent_warnings(monitor.sent)
     print(
         f"Added {transaction.kind.value} {transaction.id}: "
         f"{_money(str(transaction.amount.amount))} {transaction.category.value} "
@@ -252,10 +257,11 @@ def _cmd_budget_set(repo: Repository, args: argparse.Namespace) -> None:
             f"invalid limit {args.limit!r}; enter a number like 200.00", field="limit"
         ) from exc
     budget = Budget(Category.from_text(args.category), args.month or _this_month(), limit)
-    others = [
-        b for b in repo.load_budgets() if (b.category, b.month) != (budget.category, budget.month)
-    ]
+    before = repo.load_budgets()
+    others = [b for b in before if (b.category, b.month) != (budget.category, budget.month)]
     repo.save_budgets([*others, budget])
+    # A new limit is a new threshold, so this budget's old warnings are forgotten.
+    repo.save_sent_warnings(forget_changed(repo.load_sent_warnings(), before, [*others, budget]))
     print(
         f"Budget set: {budget.category.value} {budget.month}, "
         f"limit {_money(str(budget.limit.amount))}"

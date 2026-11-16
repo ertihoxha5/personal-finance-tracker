@@ -14,6 +14,11 @@ Rules:
   before the limit is really reached. The thresholds are compared on exact amounts.
 - ``BUDGET_WARNING`` (80%) and ``BUDGET_EXCEEDED`` (100%) are the two warning levels used by
   ``pft.services.budget_monitor``.
+- The year of the month must be ``MIN_YEAR`` to ``MAX_YEAR``. The reports use the same two
+  constants, so a month that can hold a budget can always be reported.
+- ``SentWarning`` records that a level of a budget was already reported. The records are
+  stored (see pft.infrastructure.repository), so a level is reported once per budget even
+  when the expense that reached it is deleted and added again.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from pft.domain.category import Category
 from pft.domain.exceptions import BudgetError, DataImportError, FinanceError
@@ -33,6 +38,12 @@ BUDGET_WARNING = Decimal("0.80")
 BUDGET_EXCEEDED = Decimal("1.00")
 # Highest first, so the monitor reports the most serious level a single expense reaches.
 BUDGET_LEVELS: tuple[Decimal, ...] = (BUDGET_EXCEEDED, BUDGET_WARNING)
+
+# The years a budget or a report accepts. Reports also look at the month before and the one
+# after, and the dashboard five months back; a year near 0001 or 9999 would make those dates
+# impossible. pft.services.reports imports these, so both always agree.
+MIN_YEAR = 1900
+MAX_YEAR = 9998
 
 _HUNDRED = Decimal(100)
 _ONE_DECIMAL = Decimal("0.1")
@@ -65,6 +76,9 @@ class Budget:
             )
         if not isinstance(self.month, str) or _MONTH.fullmatch(self.month) is None:
             raise BudgetError(f"invalid month {self.month!r}; use the form 2026-11", field="month")
+        year = int(self.month[:4])
+        if not MIN_YEAR <= year <= MAX_YEAR:
+            raise BudgetError(f"year must be {MIN_YEAR} to {MAX_YEAR}, got {year}", field="month")
         if not isinstance(self.limit, Money) or self.limit.amount <= 0:
             raise BudgetError("a budget limit must be more than zero", field="limit")
 
@@ -140,11 +154,48 @@ class Budget:
             raise DataImportError(f"bad budget row: {exc.message}", field=exc.field) from exc
 
 
+class SentWarning(NamedTuple):
+    """A warning that was already sent: this level of the budget for this category and month."""
+
+    category: Category
+    month: str
+    level: Decimal
+
+    def to_row(self) -> dict[str, str]:
+        """The record as text, keyed like SENT_WARNING_COLUMNS; the level is 80 or 100."""
+        return {
+            "category": self.category.value,
+            "month": self.month,
+            "level": str(level_percent(self.level)),
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, object]) -> SentWarning:
+        """Rebuild a record saved by to_row(); an unknown level is a DataImportError."""
+        try:
+            percent = int(str(row["level"]))
+            level = next(lv for lv in BUDGET_LEVELS if level_percent(lv) == percent)
+            return cls(Category.from_text(str(row["category"])), str(row["month"]).strip(), level)
+        except KeyError as exc:
+            raise DataImportError(
+                f"budget warning row is missing column {exc}", field=str(exc)
+            ) from exc
+        except (ValueError, StopIteration) as exc:
+            raise DataImportError(f"bad budget warning level {row['level']!r}") from exc
+        except FinanceError as exc:
+            raise DataImportError(
+                f"bad budget warning row: {exc.message}", field=exc.field
+            ) from exc
+
+
 __all__ = [
     "BUDGET_EXCEEDED",
     "BUDGET_LEVELS",
     "BUDGET_WARNING",
+    "MAX_YEAR",
+    "MIN_YEAR",
     "Budget",
     "HasTransactions",
+    "SentWarning",
     "level_percent",
 ]

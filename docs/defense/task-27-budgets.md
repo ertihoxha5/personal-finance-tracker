@@ -12,6 +12,9 @@ Ledger knowing anything about budgets**.
   budgets.csv use.
 - Invalid input raises `BudgetError` (code `budget_error`) with `field` set to `month`, `limit`
   or `category`: the limit must be more than zero.
+- The year of the month must be `MIN_YEAR` (1900) to `MAX_YEAR` (9998). The reports import the
+  same two constants from `pft/domain/budget.py`, so every month that can hold a budget can be
+  reported (review fix: `0000-01` used to be saved as a budget, and its report answered 422).
 - `covers(tx)` is the one rule for what counts: an **`Expense`**, same category, same month,
   same currency as the limit. Income and transfers never count.
 - `spent(ledger)` sums those expenses over `ledger.all_transactions()` (all accounts).
@@ -50,11 +53,20 @@ Ledger knowing anything about budgets**.
   - 150.00 → 165.00 of 200.00 crosses 80% → `FOOD budget at 82%`.
   - 165.00 → 175.00 crosses nothing → silent.
   - 165.00 → 200.00 crosses 100% → `FOOD budget at 100%`.
-- This needs no saved state, so it also holds after a restart and in the API, where every
-  request builds a new Ledger and a new monitor
+- The crossing rule alone already keeps a later expense above 80% silent, also after a restart
   (`test_a_new_monitor_after_a_restart_does_not_repeat_old_warnings`).
-- The monitor also keeps a set of `(category, month, level)` it already sent, so removing an
-  expense and adding it again in one session does not repeat the warning.
+- It is not enough on its own: delete the expense that crossed 80% and add it again, and it
+  crosses 80% a second time. So the monitor also keeps a **history** of what was sent, a set of
+  `SentWarning(category, month, level)`, and that history is **stored** (review fix).
+  - The monitor gets the stored history in its constructor (`sent=`) and exposes the updated
+    one as `monitor.sent`. It never reads or writes files itself.
+  - API: `store.budget_monitor(ledger, callback)` builds the monitor with the stored history,
+    and `LedgerStore.write` saves `monitor.sent` **after** the Ledger was saved. If the request
+    fails, nothing is remembered, because the user never saw the warning.
+  - CLI: `pft add` loads the history, and saves it after saving the Ledger.
+- The history of a budget is forgotten when the budget is removed or its limit changes
+  (`forget_changed`): 80% of a new limit is a different amount. Saving the same limit again
+  forgets nothing.
 - One expense that jumps from under 80% past 100% sends only the 100% warning.
 - Each budget is its own (category, month), so December starts fresh.
 - Why 82% and not 83% for 82.5: the message uses the whole percentage rounded down, as the plan's
@@ -78,6 +90,9 @@ Ledger knowing anything about budgets**.
   `atomic_write`. JSON: the `"budgets"` list. SQLite: a `budgets` table, limit in integer cents,
   primary key (category, month), replaced inside one transaction.
 - `Budget.to_row()` / `from_row()` round-trip; a bad stored row is a `DataImportError`.
+- The warning history is stored the same way: `load_sent_warnings()` /
+  `save_sent_warnings()`, in `budget_warnings.csv`, a `"budget_warnings"` list in JSON, or a
+  `budget_warnings` table in SQLite (category, month, level 80 or 100).
 
 ## API
 - `GET /api/budgets?month=2026-11` → `{month, thresholds: {warning: 80, exceeded: 100},
@@ -114,6 +129,9 @@ Ledger knowing anything about budgets**.
 - `tests/integration/test_budgets_api.py` (20 cases): the routes, the same scenario through the
   API, error shapes, all three repositories, the CLI output.
 - `frontend/tests/budgets.test.mjs` (6 cases): request bodies match the Python model, status text.
+- `tests/integration/test_budget_regressions.py` (36 cases): the two review fixes. Delete and
+  re-add the crossing expense (80% and 100%), after a restart, through the CLI, in all three
+  repositories; and budget months checked against the report API month by month.
 
 ## Limits worth knowing
 - Warnings are sent when an expense is **added** through `Ledger.add_transaction`. Editing an
